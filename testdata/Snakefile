@@ -13,12 +13,12 @@ total_spike_fractions =  config["total_spike_fractions"]
 total_depths = config["total_depths"]
 reps = config["reps"]
 
-spiked_reads = expand('{rep}_depth{depth}_spike{frac}_R{readdir}.fastq.gz',
+spiked_reads = expand('{rep}_depth{depth}_spike{frac:.5f}_R{readdir}.fastq.gz',
                         rep=reps,
                         depth=total_depths,
                         frac=total_spike_fractions,
                         readdir=[1,2])
-spike_stats=expand("{rep}_depth{depth}_spike{frac}.stats",
+spike_stats=expand("{rep}_depth{depth}_spike{frac:.5f}.stats",
                    rep=reps,
                    depth=total_depths,
                    frac=total_spike_fractions,
