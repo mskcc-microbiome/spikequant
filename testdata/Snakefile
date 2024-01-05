@@ -145,3 +145,5 @@ rule stats:
     seqkit stats {input.R1} {input.R2} | tail -n+2  >> {output.stats}
     rm  ${{tmppre}}*
     """
+
+# TODO: add in assembly and binning rules
