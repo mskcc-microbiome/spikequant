@@ -8,23 +8,51 @@ from pathlib import Path
 # the str is needed as when running from github workflow.current_basedir is a Githubfile, not a string or a path so os.path objects
 configfile: os.path.join(str(workflow.current_basedir), "config.yaml")
 
+# this formats the fractions to strings so we don't have annoying outputs with sci notation or bad 0 padding
+total_spike_fractions =  [f"{frac:.5f}" for frac in config["total_spike_fractions"]]
 
-total_spike_fractions =  config["total_spike_fractions"]
 total_depths = config["total_depths"]
 reps = config["reps"]
 
-spiked_reads = expand('{rep}_depth{depth}_spike{frac:.5f}_R{readdir}.fastq.gz',
+spiked_reads = expand('{rep}_depth{depth}_spike{frac}_R{readdir}.fastq.gz',
                         rep=reps,
                         depth=total_depths,
                         frac=total_spike_fractions,
                         readdir=[1,2])
-spike_stats=expand("{rep}_depth{depth}_spike{frac:.5f}.stats",
+spike_stats = expand("{rep}_depth{depth}_spike{frac}.statsfastq",
                    rep=reps,
                    depth=total_depths,
                    frac=total_spike_fractions,
                    )
 
+assemblies = expand("spades_{rep}_depth{depth}_spike{frac}.assembly.fasta",
+                   rep=reps,
+                   depth=total_depths,
+                   frac=total_spike_fractions,
+)
 
+BINNING_TOOLS = ["concoct", "metabat2", "maxbin2"]
+binstats = expand(
+    "metawrap/rawbinning_{rep}_depth{depth}_spike{frac}/{tool}/{tool}_bins/{tool}.done",
+                   rep=reps,
+                   depth=total_depths,
+                   frac=total_spike_fractions,
+    tool=BINNING_TOOLS,
+)
+
+refined_binstats_each = expand(
+    "metawrap/refined_binning_{rep}_depth{depth}_spike{frac}/{tool}_bins.stats",
+                   rep=reps,
+                   depth=total_depths,
+                   frac=total_spike_fractions,
+    tool=BINNING_TOOLS,
+)
+refined_stats = expand(
+    f'metawrap/refined_binning_{{rep}}_depth{{depth}}_spike{{frac}}/metawrap_{config["metawrap_compl_thresh"]}_{config["metawrap_contam_thresh"]}_bins.stats',
+                       rep=reps,
+                   depth=total_depths,
+                   frac=total_spike_fractions,
+)
 
 
 localrules:
@@ -35,6 +63,12 @@ rule all:
     input:
         spiked_reads,
         spike_stats,
+        assemblies,
+        binstats,
+        "clean.done",
+#        refined_stats,
+#        refined_binstats_each,
+
 
 rule get_references:
     output:
@@ -136,14 +170,133 @@ rule stats:
         R1="{rep}_depth{depth}_spike{frac}_R1.fastq.gz",
         R2="{rep}_depth{depth}_spike{frac}_R2.fastq.gz",
     output:
-        stats="{rep}_depth{depth}_spike{frac}.stats"
+        stats="{rep}_depth{depth}_spike{frac}.statsfastq"
     container: "docker://ghcr.io/vdblab/seqkit:2.3.1"
     threads: 8
     shell:"""
     tmppre="tmp_{wildcards.rep}_depth{wildcards.depth}_spike{wildcards.frac}"
     seqkit stats ${{tmppre}}*.fq > {output.stats}
     seqkit stats {input.R1} {input.R2} | tail -n+2  >> {output.stats}
-    rm  ${{tmppre}}*
+    #rm  ${{tmppre}}*
     """
 
-# TODO: add in assembly and binning rules
+
+rule spades:
+    # TODO: add in params for read length to experiment with larger kmers than default
+    input:
+        R1="{rep}_depth{depth}_spike{frac}_R1.fastq.gz",
+        R2="{rep}_depth{depth}_spike{frac}_R2.fastq.gz",
+    output:
+        assembly="spades_{rep}_depth{depth}_spike{frac}.assembly.fasta",
+        graph="spades_{rep}_depth{depth}_spike{frac}.assembly_graph.gfa",
+        outdir=directory("spades_{rep}_depth{depth}_spike{frac}/"),
+        spades_log="spades_{rep}_depth{depth}_spike{frac}/spades.log",
+    container:
+        config["docker_spades"]
+    resources:
+        mem_mb=58*1024,
+        runtime=48 * 60,
+    threads: 64
+    log:
+        e="logs/spades_{rep}_depth{depth}_spike{frac}.log",
+    shell:
+        """
+        spades.py \
+            -1 {input.R1} \
+            -2 {input.R2} \
+            -t {threads} \
+            --meta \
+            -o {output.outdir}/ \
+            -m $(({resources.mem_mb}/1024)) \
+            2> {log.e}
+        mv {output.outdir}/scaffolds.fasta {output.assembly}
+        mv {output.outdir}/assembly_graph_with_scaffolds.gfa {output.graph}
+        """
+
+
+rule unzip_rename_fastq_for_metawrap:
+    """ metawrap needs uncompressed fastqs with a specific naming convention
+    otherwise, "Unable to find proper fastq read pair in the format *_1.fastq and *_2.fastq"
+    """
+    input:
+        R1="{rep}_depth{depth}_spike{frac}_R1.fastq.gz",
+        R2="{rep}_depth{depth}_spike{frac}_R2.fastq.gz",
+    output:
+        R1=temp("bintmp_{rep}_depth{depth}_spike{frac}_1.fastq"),
+        R2=temp("bintmp_{rep}_depth{depth}_spike{frac}_2.fastq"),
+    shell:
+        """
+        zcat {input.R1} > {output.R1}
+        zcat {input.R2} > {output.R2}
+        """
+
+
+rule metawrap_binning:
+    """
+    """
+    input:
+        R1="bintmp_{rep}_depth{depth}_spike{frac}_1.fastq",
+        R2="bintmp_{rep}_depth{depth}_spike{frac}_2.fastq",
+        assembly="spades_{rep}_depth{depth}_spike{frac}.assembly.fasta",
+    output:
+        stats="metawrap/rawbinning_{rep}_depth{depth}_spike{frac}/{tool}/{tool}_bins/{tool}.done",
+    params:
+        outdir=lambda wc, output: os.path.dirname(os.path.dirname(output.stats)),
+    container:
+        config["docker_metawrap"]
+    threads: 64
+    resources:
+        mem_mb=32 * 1024,
+        runtime=12 * 60,
+    shell:
+        """
+        metawrap binning -o {params.outdir} -t {threads} -a {input.assembly} --{wildcards.tool} {input.R1} {input.R2}
+        touch {output.stats}
+        """
+
+
+rule metawrap_refine_binning:
+    """The names for the params binput_dirs is due to the crazy naming of the output of metawrap.
+    The only consistant file we can use as a trigger is the <tool>.done file, but the refine module needs the dir beneath it under a path like
+    metawrap/rawbinning_473/concoct/concoct_bins/concoct_bins
+    """
+    input:
+        binputs=binstats,
+    output:
+        stats=f'metawrap/refined_binning_{{rep}}_depth{{depth}}_spike{{frac}}/metawrap_{config["metawrap_compl_thresh"]}_{config["metawrap_contam_thresh"]}_bins.stats',
+        stats_mqc=f'metawrap/refined_binning_{{rep}}_depth{{depth}}_spike{{frac}}/metawrap_{config["metawrap_compl_thresh"]}_{config["metawrap_contam_thresh"]}_bins.stats_mqc.tsv',
+        contigs=f'metawrap/refined_binning_{{rep}}_depth{{depth}}_spike{{frac}}/metawrap_{config["metawrap_compl_thresh"]}_{config["metawrap_contam_thresh"]}_bins.contigs',
+        bin1=f"metawrap/refined_binning_{{rep}}_depth{{depth}}_spike{{frac}}/{BINNING_TOOLS[0]}_bins.stats",
+        bin2=f"metawrap/refined_binning_{{rep}}_depth{{depth}}_spike{{frac}}/{BINNING_TOOLS[1]}_bins.stats",
+        bin3=f"metawrap/refined_binning_{{rep}}_depth{{depth}}_spike{{frac}}/{BINNING_TOOLS[2]}_bins.stats",
+    params:
+        outdir=lambda wc, output: os.path.dirname(output.stats),
+        binput_dirs=lambda wc, input: [os.path.dirname(x) for x in input.binputs],
+        completeness=config["metawrap_compl_thresh"],
+        contamination=config["metawrap_contam_thresh"],
+        checkm_db=config["checkm_db"],
+    # this is a different container that has checkm installed
+    container:
+        config["docker_metawrap"]
+    threads: 32
+    # give it 82 gb memory because checkm estimates pplacer will need 40GB per core, and we want this to run reasonably fast
+    resources:
+        mem_mb=82 * 1024,
+        runtime=12 * 60,
+    shell:
+        """
+        export  CHECKM_DATA_PATH={params.checkm_db}
+        metawrap bin_refinement -o {params.outdir} -t {threads} -A {params.binput_dirs[0]} -B {params.binput_dirs[1]} -C {params.binput_dirs[2]} -c {params.completeness} -x {params.contamination}
+        echo -e "#id: 'metawrap'\n#plot_type: 'table'\n#section_name: 'Bin Refinement'" > {output.stats}_mqc.tsv && cat {output.stats} >> {output.stats}_mqc.tsv
+        """
+
+rule cleanup:
+    input:
+        binstats,
+    output:
+        touch("clean.done")
+    shell:
+        """
+        rm ./tmp*fq
+        rm ./tmp*aln
+        """
