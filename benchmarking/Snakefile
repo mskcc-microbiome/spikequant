@@ -365,7 +365,7 @@ rule tabulate:
     output:
         "all_coverage.tsv"
     shell: """
-    echo -e "sample\tGenome\tMean\tRelative_Abundance_Perc\tTrimmed_Mean\tCovered_Bases\tVariance\tLength\tRead_Count\tReads_per_base\tRPKM\rTPM" > {output[0]}
+    echo -e "sample\tGenome\tMean\tRelative_Abundance_Perc\tTrimmed_Mean\tCovered_Bases\tVariance\tLength\tRead_Count\tReads_per_base\tRPKM\tTPM" > {output[0]}
     for rep in {input}
     do
     base=$( basename $rep  | sed "s|_bins.coverage_mqc.tsv||g")
