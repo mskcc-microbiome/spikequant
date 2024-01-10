@@ -26,3 +26,10 @@ snakemake --snakefile testdata/Snakefile --directory $PWD/testdata/data/
 ```
 
 configure the types of data it creates via the config file in testdata/config.yaml.  We have commited a 100k read dataset to the repo, along with its assembly and binning results. Due to the poor quality of this low-depth assembly, we don't bother running the bin refinement step of metawrap.
+
+## Benchmarking
+The benchmarking workflow compares alignment methods and off-target database effectiveness for spike remove
+Benchmarking can be run on the Test data in the example config running the following, noting that `--directory` must be a location one file level deeper than the root for the relative paths to work.
+```
+snakemake --snakefile benchmarking/Snakefile --directory $PWD/benchmarking_results/
+```

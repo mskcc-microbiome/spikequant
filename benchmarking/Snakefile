@@ -24,7 +24,8 @@ onstart:
 
 localrules:
     all,
-    ani_filter
+    ani_filter,
+    add_spikes_to_bin_dir,
 
 mappers = ["minimap2-sr", "bwa-mem"]
 dbtypes = ["spike", "assembly", "bins", "mock"]
@@ -245,6 +246,7 @@ rule get_nonspike_reads:
         R2tmpspike=lambda wc, output: output.spikeR2.replace(".gz", ""),
     container: "docker://ghcr.io/vdblab/bowtie2:2.5.0"
     shell:"""
+    set -eoux pipefail
     # get header, turn into a BED file
     samtools view -H  {input.bam} | grep "Salinibacter\|Trichoderma\|Haloarcula" | cut -f 2,3 | sed "s|SN:||g" | sed "s|LN:|1\t|g" | sort -k1,1 -k2,2n > {output.bed}
 
@@ -254,11 +256,14 @@ rule get_nonspike_reads:
     samtools sort -n -o {output.nonspike} unsorted_{output.nonspike}
     samtools sort -n -o tmp_sorted_spikes_{wildcards.sample}_and_{wildcards.dbtype}_via_{wildcards.mapper}.bam tmp_unsorted_spikes_{wildcards.sample}_and_{wildcards.dbtype}_via_{wildcards.mapper}.bam
 
-    rm unsorted_{output.nonspike} tmp_unsorted_spikes_{wildcards.sample}_and_{wildcards.dbtype}_via_{wildcards.mapper}.bam
     # samtools can ouput copressed fastqs but it isn't multithreaded as fast as pigz
     samtools fastq -1 {params.R1tmp} -2 {params.R2tmp} -0 /dev/null -s /dev/null -n -@ {threads} {output.nonspike}
     samtools fastq -1 {params.R1tmpspike} -2 {params.R2tmpspike} -0 /dev/null -s /dev/null -n -@ {threads} tmp_sorted_spikes_{wildcards.sample}_and_{wildcards.dbtype}_via_{wildcards.mapper}.bam
     samtools flagstat {output.nonspike}
-    rm tmp_*
-    pigz ./*fastq
+
+    rm unsorted_{output.nonspike} tmp_unsorted_spikes_{wildcards.sample}_and_{wildcards.dbtype}_via_{wildcards.mapper}.bam tmp_sorted_spikes_{wildcards.sample}_and_{wildcards.dbtype}_via_{wildcards.mapper}.bam
+    pigz {params.R1tmp}
+    pigz {params.R2tmp}
+    pigz {params.R1tmpspike}
+    pigz {params.R2tmpspike}
     """
