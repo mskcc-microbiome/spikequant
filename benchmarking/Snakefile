@@ -25,10 +25,12 @@ onstart:
 localrules:
     all,
     ani_filter,
-    add_spikes_to_bin_dir,
+#    add_spikes_to_bin_dir,
 
 mappers = ["minimap2-sr", "bwa-mem"]
-dbtypes = ["spike", "assembly", "bins", "mock"]
+quanttype = ["allseqs", "primaryseq"]
+dbtypes = [f"{x}-{y}" for x in ["spike", "assembly", "bins", "mock"] for y in quanttype]
+
 covermreports = expand('coverm/{sample}_and_{dbtype}_via_{mapper}_bins.coverage_mqc.tsv',
                        sample=config["sample"],
                        mapper=mappers,
@@ -48,7 +50,7 @@ ani_results = expand('{sample}_and_{dbtype}_ani_results.tsv',
 
 
 wildcard_constraints:
-    dbtype="spike|assembly|bins|mock",
+    dbtype="spike-allseqs|assembly-allseqs|bins-allseqs|mock-allseqs|spike-primaryseq|assembly-primaryseq|bins-primaryseq|mock-primaryseq",
     mapper="minimap2-sr|bwa-mem",
 
 
@@ -59,6 +61,7 @@ rule all:
         despiked_reads,
         ani_results,
         covermreports,
+        "all_coverage.tsv"
 
 
 rule add_spikes_to_bin_dir:
@@ -66,16 +69,22 @@ rule add_spikes_to_bin_dir:
         bindir=config["bindir"],
         assembly=config["assembly"]
     output:
-        bindir=temp(directory("{sample}_and_bins")),
-        assemblydir=temp(directory("{sample}_and_assembly")),
-        mockdir=temp(directory("{sample}_and_mock")),
-        spikedir=temp(directory("{sample}_and_spike")),
+        bindir=temp(directory("{sample}_and_bins-allseqs")),
+        assemblydir=temp(directory("{sample}_and_assembly-allseqs")),
+        mockdir=temp(directory("{sample}_and_mock-allseqs")),
+        spikedir=temp(directory("{sample}_and_spike-allseqs")),
+        # sr="{sample}_and_spike-allseqs/Salinibacter_ruber.fa",
+        # hh="{sample}_and_spike-allseqs/Haloarcula_hispanica.fa",
+        # tr="{sample}_and_spike-allseqs/Trichoderma_reesei.fa",
+#    container: "docker://ghcr.io/vdblab/bowtie2:2.5.0"
     shell:"""
     wget -N https://s3.amazonaws.com/zymo-files/BioPool/D6331.refseq.zip
     unzip D6331.refseq.zip
     mkdir {output}
-    mv D6331.refseq/* {output.mockdir}
+    mv D6331.refseq/genomes/* {output.mockdir}
+
     cp {input.bindir}/* {output.bindir}/
+    cp {input.assembly} {output.assemblydir}
 
     curl -o - ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/013/045/GCA_000013045.1_ASM1304v1/GCA_000013045.1_ASM1304v1_genomic.fna.gz | gunzip > {output.spikedir}/Salinibacter_ruber.fa
     # getting Trichoderma reesei  QM6a instead of  Trichoderma reesei ATCC 13631 .  Might be fine license-wise but not sure
@@ -88,9 +97,90 @@ rule add_spikes_to_bin_dir:
     cp {output.spikedir}/*.fa {output.mockdir}
     """
 
+rule split_spikes_fasta_primary_other:
+    """ for each reference, split it into two files: first sequences and all subsequent seqs
+    """
+    input:
+        # sr="{sample}_and_spike-allseqs/Salinibacter_ruber.fa",
+        # hh="{sample}_and_spike-allseqs/Haloarcula_hispanica.fa",
+        # tr="{sample}_and_spike-allseqs/Trichoderma_reesei.fa",
+        indir="{sample}_and_spike-allseqs",
+    output:
+        outdir=directory("{sample}_splitspikes"),
+        # psr="splitspike/Salinibacter_ruber_primary.fa",
+        # phh="splitspike/Haloarcula_hispanica_primary.fa",
+        # ptr="splitspike/Trichoderma_reesei_primary.fa",
+        # osr="splitspike/Salinibacter_ruber_other.fa",
+        # ohh="splitspike/Haloarcula_hispanica_other.fa",
+        # otr="splitspike/Trichoderma_reesei_other.fa",
+#        trigger=touch("{sample}_split_spikes.done"),
+    run:
+        import os
+        os.makedirs(output.outdir, exist_ok=True)
+        refs = ["Salinibacter_ruber", "Haloarcula_hispanica", "Trichoderma_reesei"]
+        sets = {
+            "sr": [
+                os.path.join(input.indir, refs[0] + ".fa"),
+                os.path.join(output.outdir, refs[0] + "_primary.fa"),
+                os.path.join(output.outdir, refs[0] + "_other.fa")
+            ],
+            "hh": [
+                os.path.join(input.indir, refs[1] + ".fa"),
+                os.path.join(output.outdir, refs[1] + "_primary.fa"),
+                os.path.join(output.outdir, refs[1] + "_other.fa") ],
+            "tr": [
+                os.path.join(input.indir, refs[2] + ".fa"),
+                os.path.join(output.outdir, refs[2] + "_primary.fa"),
+                os.path.join(output.outdir, refs[2] + "_other.fa")]
+            }
+        for k,v in sets.items():
+            with open(v[0], "r") as inf, open(v[1], "w") as outp, open(v[2], "w") as outo:
+                primary = True
+                for i, line in enumerate(inf):
+                    if i != 0 and line.startswith(">"):
+                        primary = False
+                    if primary:
+                        outp.write(line)
+                    else:
+                        outo.write(line)
+
+
+rule add_split_spikes_to_bin_dir:
+    input:
+        indir="{sample}_splitspikes",
+        bindir="{sample}_and_bins-allseqs",
+        assemblydir="{sample}_and_assembly-allseqs",
+        mockdir="{sample}_and_mock-allseqs",
+    output:
+        pbindir=temp(directory("{sample}_and_bins-primaryseq")),
+        passemblydir=temp(directory("{sample}_and_assembly-primaryseq")),
+        pmockdir=temp(directory("{sample}_and_mock-primaryseq")),
+        pspikedir=temp(directory("{sample}_and_spike-primaryseq")),
+    container: "docker://ghcr.io/vdblab/bowtie2:2.5.0"
+    shell:"""
+    mkdir -p {output}
+    cp {input.mockdir}/* {output.pmockdir}/
+    cp {input.bindir}/* {output.pbindir}/
+    cp {input.assemblydir}/* {output.passemblydir}/
+
+    cp {input.indir}/*.fa {output.pbindir}
+    cp {input.indir}/*.fa {output.passemblydir}
+    cp {input.indir}/*.fa {output.pmockdir}
+    cp {input.indir}/*.fa {output.pspikedir}
+
+    # since we had already copied the non-split reference genomes,
+    # we need to remove them from pbindir, passemblydir, and pmockdir
+    # they aren't in pspikedir
+    for d in {output.pbindir} {output.passemblydir} {output.pmockdir}
+    do
+    rm ${{d}}/Salinibacter_ruber.fa ${{d}}/Haloarcula_hispanica.fa ${{d}}/Trichoderma_reesei.fa
+    done
+    """
+
 rule fastani:
     input:
-        bindir="{sample}_and_{dbtype}"
+        bindir="{sample}_and_{dbtype}",
+#        trigger="{sample}_split_spikes.done",
     output:
         csv="{sample}_and_{dbtype}_ani_results.tsv",
         manifest="{sample}_and_{dbtype}_manifest.txt"
@@ -199,6 +289,7 @@ rule coverm:
         R1=config["R1"],
         R2=config["R2"],
         bindir="{sample}_and_{dbtype}",
+#        trigger="{sample}_split_spikes.done",
     output:
         mqc='coverm/{sample}_and_{dbtype}_via_{mapper}_bins.coverage_mqc.tsv',
         bam=os.path.join('coverm/{sample}_and_{dbtype}_via_{mapper}_bams/', 'coverm-genome.' + os.path.basename(config["R1"][0]) + ".bam"),
@@ -266,4 +357,18 @@ rule get_nonspike_reads:
     pigz {params.R2tmp}
     pigz {params.R1tmpspike}
     pigz {params.R2tmpspike}
+    """
+
+rule tabulate:
+    input:
+        covermreports
+    output:
+        "all_coverage.tsv"
+    shell: """
+    echo -e "sample\tGenome\tMean\tRelative_Abundance_Perc\tTrimmed_Mean\tCovered_Bases\tVariance\tLength\tRead_Count\tReads_per_base\tRPKM\rTPM" > {output[0]}
+    for rep in {input}
+    do
+    base=$( basename $rep  | sed "s|_bins.coverage_mqc.tsv||g")
+    tail -n+4 $rep | sed "s|^|${{base}}\t|g" >> {output[0]}
+    done
     """
