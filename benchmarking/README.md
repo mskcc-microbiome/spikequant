@@ -1,4 +1,4 @@
-# Generating Full Benchmark dataset
+# Generating Full Benchmark simulated dataset
 ```
 snakemake --snakefile testdata/Snakefile --directory $PWD/benchmarking/data/ --config benchmarking/benchmarking_sim_data_config.yaml
 ```
@@ -6,6 +6,5 @@ snakemake --snakefile testdata/Snakefile --directory $PWD/benchmarking/data/ --c
 ## Executing the Benchmarking dataset
 
 ```
-snakemake --snakefile testdata/Snakefile --directory $PWD/benchmarking/data/ --configfile benchmarking/benchmarking_sim_data_config.yaml
 snakemake --snakefile benchmarking/run.smk
 ```

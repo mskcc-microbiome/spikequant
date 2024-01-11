@@ -58,16 +58,24 @@ refined_stats = expand(
 localrules:
     all,
     make_input_table,
-
-rule all:
-    input:
+all_results = [
         spiked_reads,
         spike_stats,
         assemblies,
         binstats,
-        "clean.done",
-#        refined_stats,
-#        refined_binstats_each,
+        "clean.done"
+    ]
+
+# only bother attempting to refine the bins if we have at least 10m reads
+if min(total_depths) >= 10000000:
+    all_results.extend([
+        refined_stats,
+        refined_binstats_each,
+    ])
+
+rule all:
+    input:
+        all_results
 
 
 rule get_references:
@@ -261,7 +269,7 @@ rule metawrap_refine_binning:
     metawrap/rawbinning_473/concoct/concoct_bins/concoct_bins
     """
     input:
-        binputs=binstats,
+        binputs=expand("metawrap/rawbinning_{{rep}}_depth{{depth}}_spike{{frac}}/{tool}/{tool}_bins/{tool}.done", tool=BINNING_TOOLS),
     output:
         stats=f'metawrap/refined_binning_{{rep}}_depth{{depth}}_spike{{frac}}/metawrap_{config["metawrap_compl_thresh"]}_{config["metawrap_contam_thresh"]}_bins.stats',
         stats_mqc=f'metawrap/refined_binning_{{rep}}_depth{{depth}}_spike{{frac}}/metawrap_{config["metawrap_compl_thresh"]}_{config["metawrap_contam_thresh"]}_bins.stats_mqc.tsv',
