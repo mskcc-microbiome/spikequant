@@ -1,0 +1,11 @@
+total_spike_fractions: [0, .00001, .0001, .001, .01, .1, 1]
+total_depths:
+ - 10000000
+reps: [1,2,3,4,5]
+
+docker_spades: "docker://staphb/spades:3.15.4"
+checkm_db: "/data/brinkvd/resources/dbs/checkm/2015_01_16/"
+docker_coverm: "docker://ghcr.io/vdblab/coverm:0.6.1"
+docker_metawrap: "docker://ghcr.io/vdblab/metawrap:1.3"
+metawrap_contam_thresh: 10
+metawrap_compl_thresh: 70
