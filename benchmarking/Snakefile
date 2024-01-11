@@ -361,7 +361,7 @@ rule tabulate:
     input:
         covermreports
     output:
-        "all_coverage.tsv"
+        f"{config['sample']}_all_coverage.tsv"
     shell: """
     echo -e "sample\tGenome\tMean\tRelative_Abundance_Perc\tTrimmed_Mean\tCovered_Bases\tVariance\tLength\tRead_Count\tReads_per_base\tRPKM\tTPM" > {output[0]}
     for rep in {input}
