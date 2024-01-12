@@ -28,10 +28,13 @@ envvars:
     "TMPDIR",
     "SNAKEMAKE_PROFILE"
 
+profile = os.getenv("SNAKEMAKE_PROFILE")
+
 
 rule all:
     input:
-        expand("{sample}/{sample}_all_coverage.tsv", sample=manif_base)
+        expand("{sample}/{sample}_all_coverage.tsv", sample=manif_base),
+        "merged_benchmarking_coverage.tsv",
 
 rule run_benchmarking_pipeline:
     input:
@@ -42,12 +45,31 @@ rule run_benchmarking_pipeline:
     output:
         "{sample}/{sample}_all_coverage.tsv"
     params:
-        profile=os.getenv("SNAKEMAKE_PROFILE"),
+        profile=profile,
         workflow_dir=workflow.current_basedir,
     resources:
         walltime=5*60
     shell:"""
     export SNAKEMAKE_PROFILE={params.profile}
+    # downloading references can fail.
+    if [ -d "{wildcards.sample}/D6331.refseq" ]
+    then
+    rm -r {wildcards.sample}/D6331.refseq*
+    fi
     snakemake --snakefile {params.workflow_dir}/Snakefile --directory {wildcards.sample}/ --config R1=[{input.R1s}] \
-    R2=[{input.R2s}] bindir={input.bindir} assembly={input.assembly} sample={wildcards.sample} -f {wildcards.sample}_all_coverage.tsv
+    R2=[{input.R2s}] bindir={input.bindir} assembly={input.assembly} sample={wildcards.sample} -f {wildcards.sample}_all_coverage.tsv \
+    --rerun-incomplete
+    """
+
+rule merge_tabulated_tables:
+    input:
+        expand("{sample}/{sample}_all_coverage.tsv", sample=manif_base),
+    output:
+        f"merged_benchmarking_coverage.tsv"
+    shell: """
+    head -n 1 {input[0]} > {output}
+    for i in {input}
+    do
+    cat $i | grep -v "Relative_Abundance_Perc" >> {output}
+    done
     """
