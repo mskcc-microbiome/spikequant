@@ -12,13 +12,13 @@ library(patchwork)
 
 
 ```{r}
-system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/data_summary.tsv data_summary.tsv")
-system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/results/merged_benchmarking_coverage.tsv merged_benchmarking_coverage.tsv")
+if (!file.exists("benchmarking/data_summary.tsv")) system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/data_summary.tsv benchmarking/data_summary.tsv")
+if (!file.exists("benchmarking/results/merged_benchmarking_coverage.tsv")) system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/results/merged_benchmarking_coverage.tsv benchmarking/results/merged_benchmarking_coverage.tsv")
 
 spikes <- c("Haloarcula_hispanica", "Salinibacter_ruber", "Trichoderma_reesei")
 spikes_pri <- c("Haloarcula_hispanica_primary", "Salinibacter_ruber_primary", "Trichoderma_reesei_primary" )
 # read in the data summary to get the actual totals 
-data_summary_most <- read.csv("data_summary.tsv", sep="\t") %>%
+data_summary_most <- read.csv("benchmarking/data_summary.tsv", sep="\t") %>%
   filter(!grepl("spike0.00000", file)) %>% 
   mutate(
     num_seqs=as.numeric(gsub(",", "", num_seqs)),
@@ -37,7 +37,7 @@ data_summary_most <- read.csv("data_summary.tsv", sep="\t") %>%
   distinct()
 # parse the ones lacking any spikes so we still have totals
 # the left join with the dummy data makes the merging below more straightforward
-data_summary_nospike <- read.csv("data_summary.tsv", sep="\t") %>% 
+data_summary_nospike <- read.csv("benchmarking/data_summary.tsv", sep="\t") %>% 
   filter(grepl("spike0.00000", file)) %>% 
     filter(!grepl("tmp.*fq", file)) %>% 
   mutate(
@@ -53,7 +53,7 @@ data_summary <- bind_rows(data_summary_most,data_summary_nospike) %>%
   rename("genome_base" = "Genome")
 # prepare the same summary but for the _primary ones
 
-tmp <- read.csv("merged_benchmarking_coverage.tsv", sep="\t")  %>% 
+tmp <- read.csv("benchmarking/results/merged_benchmarking_coverage.tsv", sep="\t")  %>% 
   rename(rawsample=sample) %>%
   mutate(
     quantref=ifelse(grepl("allseqs", rawsample), "all", "primary"),
