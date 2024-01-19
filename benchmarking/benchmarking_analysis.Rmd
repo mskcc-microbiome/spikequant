@@ -1,0 +1,104 @@
+---
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+library(tidyverse)
+library(patchwork)
+```
+
+
+
+
+```{r}
+system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/data_summary.tsv data_summary.tsv")
+system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/results/merged_benchmarking_coverage.tsv merged_benchmarking_coverage.tsv")
+
+spikes <- c("Haloarcula_hispanica", "Salinibacter_ruber", "Trichoderma_reesei")
+spikes_pri <- c("Haloarcula_hispanica_primary", "Salinibacter_ruber_primary", "Trichoderma_reesei_primary" )
+# read in the data summary to get the actual totals 
+data_summary_most <- read.csv("data_summary.tsv", sep="\t") %>%
+  filter(!grepl("spike0.00000", file)) %>% 
+  mutate(
+    num_seqs=as.numeric(gsub(",", "", num_seqs)),
+    sample=gsub(".*?_(\\d+_depth.*?_spike.*?)_.*", "\\1", file),
+    Genome = gsub(".*?_(\\d+_depth.*?_spike.*?)_(.*).fasta.*", "\\2", file),
+    is_spike =Genome %in% c(spikes, spikes_pri)
+  ) %>% 
+  group_by(sample,is_spike, Genome) %>% 
+  summarize(num_seqs = sum(num_seqs)) %>%
+  ungroup() %>%
+  group_by(sample) %>% 
+  mutate(total = sum(num_seqs)) %>%
+  ungroup() %>% 
+  filter( is_spike)%>% 
+  select(sample, Genome, num_seqs, total) %>% 
+  distinct()
+# parse the ones lacking any spikes so we still have totals
+# the left join with the dummy data makes the merging below more straightforward
+data_summary_nospike <- read.csv("data_summary.tsv", sep="\t") %>% 
+  filter(grepl("spike0.00000", file)) %>% 
+    filter(!grepl("tmp.*fq", file)) %>% 
+  mutate(
+    num_seqs=as.numeric(gsub(",", "", num_seqs)),
+    sample=gsub("(\\d+_depth.*?_spike.*?)_.*", "\\1", file),
+  ) %>% 
+ group_by(sample) %>% 
+  summarize(total = sum(num_seqs)) %>% ungroup() %>%
+  mutate(num_seqs=0) %>% 
+  left_join(data.frame(num_seqs=rep(0, length(spikes)), Genome=spikes), relationship= "many-to-many")
+
+data_summary <- bind_rows(data_summary_most,data_summary_nospike) %>% 
+  rename("genome_base" = "Genome")
+# prepare the same summary but for the _primary ones
+
+tmp <- read.csv("merged_benchmarking_coverage.tsv", sep="\t")  %>% 
+  rename(rawsample=sample) %>%
+  mutate(
+    quantref=ifelse(grepl("allseqs", rawsample), "all", "primary"),
+    sample=gsub("(.*?)_and.*", "\\1", rawsample),
+    dbtype=gsub("(.*?)_and_(.*?)-.*", "\\2", rawsample),
+    dbtype=ifelse(dbtype=="spike", "justspike", dbtype),
+    aligner=gsub("(.*?)_via_(.*)", "\\2", rawsample),
+    target=as.numeric(gsub(".*_spike(.*?)_and.*", "\\1", rawsample)),
+    is_spike =Genome %in% c("Haloarcula_hispanica", "Salinibacter_ruber", "Trichoderma_reesei",
+                            "Haloarcula_hispanica_primary", "Salinibacter_ruber_primary", "Trichoderma_reesei_primary" )
+  ) %>%
+  mutate(genome_base = gsub("_primary", "", Genome )) %>% 
+  left_join(data_summary, by = c("sample", "genome_base")) %>% 
+  group_by(genome_base) %>% 
+  mutate(full_genome = max(Length)) %>% 
+  ungroup() %>% 
+  mutate(counts = (Read_Count * (full_genome/100000))/(Length/100000)) %>% 
+  select(sample, dbtype, quantref, aligner, is_spike, target, Genome, Length, genome_base, full_genome, Read_Count, counts, num_seqs, total) %>% 
+  mutate(counts_perc = num_seqs/counts)
+
+
+View(tmp %>% filter(is_spike) %>% filter(grepl("1_depth10000000_spike0.00000", sample), aligner == "bwa-mem", dbtype=="bins"))
+# TODO: recalculate abundance for whole spikes based off primary only
+
+# ggplot(tmp %>% filter(is_spike) %>% 
+# #         filter(quantref == "all") %>% 
+# #         filter(dbtype != "bins") %>%
+#          group_by(sample,target, dbtype, aligner, quantref) %>% 
+#          summarize(perc = sum(Relative_Abundance_Perc) / 100,
+#                    diff_from_target = perc-target[1]), aes(y=interaction(target, dbtype), x=diff_from_target, color=aligner)) +
+#   geom_jitter(width=0) + 
+# #  geom_vline(xintercept = as.numeric(gsub(".*_spike(.*)", "\\1", unique(tmp$sample))), linetype="dotted") +
+#   facet_grid( quantref ~  .) + 
+#   #scale_x_log10(limits = c(0.00001, 1)) + 
+#   theme(axis.text.x = element_text(angle=45, hjust=1))
+
+
+ggplot(tmp %>% filter(is_spike), aes(y=interaction(target, dbtype), x=counts_perc, color=Genome)) +
+  geom_jitter(width=0) + 
+  facet_grid( aligner+quantref ~  target, scales="free", space = "free") + 
+  theme(axis.text.x = element_text(angle=45, hjust=1)) + scale_color_brewer(palette = "Paired")  
+
+ggplot(tmp %>% filter(is_spike) %>% filter(target > 0), aes(y=target, x=counts_perc, color=dbtype)) +
+  geom_jitter(width=0) + 
+  facet_grid(~ genome_base, scales="free", space = "free") + 
+  theme(axis.text.x = element_text(angle=45, hjust=1)) 
+
+```
