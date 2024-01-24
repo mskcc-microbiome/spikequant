@@ -12,6 +12,7 @@ Either execute snakemake with `--use-singularity` (or the updated syntax for sna
 - ART read simulator
 - spades
 - metawrap
+- seqkit
 
 
 ## Structure
