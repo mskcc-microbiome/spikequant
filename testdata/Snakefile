@@ -155,37 +155,42 @@ rule simulate:
     output:
         R1="{rep}_depth{depth}_spike{frac}_R1.fastq.gz",
         R2="{rep}_depth{depth}_spike{frac}_R2.fastq.gz",
+        intermediate_trigger=touch("{rep}_depth{depth}_spike{frac}_individual_reference_fastq_present"),
+    params:
+        tmppre = lambda wildcards: f"tmp_{wildcards.rep}_depth{wildcards.depth}_spike{wildcards.frac}"
     container:"docker://ghcr.io/vdblab/art:2016.06.05"
     threads: 4
     shell: """
     set -euxo pipefail
 
     # look a loop! could use parallel but this is a one-off for generating test data.
-    tmppre="tmp_{wildcards.rep}_depth{wildcards.depth}_spike{wildcards.frac}"
     cat {input.intable} | while read ref nreads
     do
         refbase=$(basename $ref)
-        art_illumina --seqSys HS25 --in $ref  --paired --len 150 --rcount $nreads --mflen 500 --sdev 10 --out ${{tmppre}}_${{refbase}}_R --rndSeed {wildcards.rep}
+        art_illumina --seqSys HS25 --in $ref  --paired --len 150 --rcount $nreads --mflen 500 --sdev 10 --out {params.tmppre}_${{refbase}}_R --rndSeed {wildcards.rep}
     done
 
-    ls ${{tmppre}}*
-    cat ${{tmppre}}*R1.fq | pigz > {output.R1}
-    cat ${{tmppre}}*R2.fq | pigz > {output.R2}
+    ls {params.tmppre}*
+    cat {params.tmppre}*R1.fq | pigz > {output.R1}
+    cat {params.tmppre}*R2.fq | pigz > {output.R2}
     """
 
 rule stats:
     input:
         R1="{rep}_depth{depth}_spike{frac}_R1.fastq.gz",
         R2="{rep}_depth{depth}_spike{frac}_R2.fastq.gz",
+        intermediate_trigger="{rep}_depth{depth}_spike{frac}_individual_reference_fastq_present",
     output:
         stats="{rep}_depth{depth}_spike{frac}.statsfastq"
+    params:
+        tmppre = lambda wildcards: f"tmp_{wildcards.rep}_depth{wildcards.depth}_spike{wildcards.frac}"
     container: "docker://ghcr.io/vdblab/seqkit:2.3.1"
     threads: 8
     shell:"""
-    tmppre="tmp_{wildcards.rep}_depth{wildcards.depth}_spike{wildcards.frac}"
-    seqkit stats ${{tmppre}}*.fq > {output.stats}
+    # gather all the per-reference fastq stats
+    seqkit stats {params.tmppre}*.fq > {output.stats}
+    # gather the final stats
     seqkit stats {input.R1} {input.R2} | tail -n+2  >> {output.stats}
-    #rm  ${{tmppre}}*
     """
 
 
@@ -300,11 +305,14 @@ rule metawrap_refine_binning:
 
 rule cleanup:
     input:
+        "{rep}_depth{depth}_spike{frac}_individual_reference_fastq_present",
         binstats,
     output:
-        touch("clean.done")
+        touch("clean_{rep}_depth{depth}_spike{frac}.done")
+    params:
+        tmppre = lambda wildcards: f"tmp_{wildcards.rep}_depth{wildcards.depth}_spike{wildcards.frac}"
     shell:
         """
-        rm ./tmp*fq
-        rm ./tmp*aln
+        rm {params.tmppre}*fq
+        rm {params.tmppre}*aln
         """
