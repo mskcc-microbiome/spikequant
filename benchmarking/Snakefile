@@ -28,7 +28,7 @@ localrules:
 #    add_spikes_to_bin_dir,
 
 mappers = ["minimap2-sr", "bwa-mem"]
-quanttype = ["allseqs", "primaryseq"]
+quanttype = ["allseqs", "primaryseq", "primaryseqnorna", "spikemarkers"]
 dbtypes = [f"{x}-{y}" for x in ["spike", "assembly", "bins", "mock"] for y in quanttype]
 
 covermreports = expand('coverm/{sample}_and_{dbtype}_via_{mapper}_bins.coverage_mqc.tsv',
@@ -50,7 +50,7 @@ ani_results = expand('{sample}_and_{dbtype}_ani_results.tsv',
 
 
 wildcard_constraints:
-    dbtype="spike-allseqs|assembly-allseqs|bins-allseqs|mock-allseqs|spike-primaryseq|assembly-primaryseq|bins-primaryseq|mock-primaryseq",
+    dbtype="spike-allseqs|assembly-allseqs|bins-allseqs|mock-allseqs|spike-primaryseq|assembly-primaryseq|bins-primaryseq|mock-primaryseq|spike-primaryseqnorna|assembly-primaryseqnorna|bins-primaryseqnorna|mock-primaryseqnorna|spike-spikemarkers|assembly-spikemarkers|bins-spikemarkers|mock-spikemarkers",
     mapper="minimap2-sr|bwa-mem",
 
 
@@ -87,10 +87,14 @@ rule add_spikes_to_bin_dir:
     cp {input.assembly} {output.assemblydir}
 
     curl -o - ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/013/045/GCA_000013045.1_ASM1304v1/GCA_000013045.1_ASM1304v1_genomic.fna.gz | gunzip > {output.spikedir}/Salinibacter_ruber.fa
+    curl -o - ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/013/045/GCA_000013045.1_ASM1304v1/GCA_000013045.1_ASM1304v1_genomic.gff.gz  | gunzip > {output.spikedir}/Salinibacter_ruber.gff
+
     # getting Trichoderma reesei  QM6a instead of  Trichoderma reesei ATCC 13631 .  Might be fine license-wise but not sure
     curl -o - ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/167/675/GCF_000167675.1_v2.0/GCF_000167675.1_v2.0_genomic.fna.gz | gunzip  > {output.spikedir}/Trichoderma_reesei.fa
+    curl -o - ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/167/675/GCF_000167675.1_v2.0/GCF_000167675.1_v2.0_genomic.gff.gz | gunzip  > {output.spikedir}/Trichoderma_reesei.gff
     # getting CBA1121 instead of Haloarcula hispanica ATCC 33960  for the same reason.
     curl -o - ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/008/729/095/GCF_008729095.1_ASM872909v1/GCF_008729095.1_ASM872909v1_genomic.fna.gz | gunzip  > {output.spikedir}/Haloarcula_hispanica.fa
+    curl -o - ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/008/729/095/GCF_008729095.1_ASM872909v1/GCF_008729095.1_ASM872909v1_genomic.gff.gz | gunzip  > {output.spikedir}/Haloarcula_hispanica.gff
 
     cp {output.spikedir}/*.fa {output.bindir}
     cp {output.spikedir}/*.fa {output.assemblydir}
@@ -113,7 +117,7 @@ rule split_spikes_fasta_primary_other:
         # osr="splitspike/Salinibacter_ruber_other.fa",
         # ohh="splitspike/Haloarcula_hispanica_other.fa",
         # otr="splitspike/Trichoderma_reesei_other.fa",
-#        trigger=touch("{sample}_split_spikes.done"),
+        # trigger=touch("{sample}_split_spikes.done"),
     run:
         import os
         os.makedirs(output.outdir, exist_ok=True)
@@ -145,6 +149,7 @@ rule split_spikes_fasta_primary_other:
                         outo.write(line)
 
 
+
 rule add_split_spikes_to_bin_dir:
     input:
         indir="{sample}_splitspikes",
@@ -171,6 +176,80 @@ rule add_split_spikes_to_bin_dir:
     # since we had already copied the non-split reference genomes,
     # we need to remove them from pbindir, passemblydir, and pmockdir
     # they aren't in pspikedir
+    for d in {output.pbindir} {output.passemblydir} {output.pmockdir}
+    do
+    rm ${{d}}/Salinibacter_ruber.fa ${{d}}/Haloarcula_hispanica.fa ${{d}}/Trichoderma_reesei.fa
+    done
+    """
+
+rule add_norna_spike_dir:
+    input:
+        indir="{sample}_splitspikes",
+        bindir="{sample}_and_bins-allseqs",
+        assemblydir="{sample}_and_assembly-allseqs",
+        mockdir="{sample}_and_mock-allseqs",
+    output:
+        pbindir=temp(directory("{sample}_and_bins-primaryseqnorna")),
+        passemblydir=temp(directory("{sample}_and_assembly-primaryseqnorna")),
+        pmockdir=temp(directory("{sample}_and_mock-primaryseqnorna")),
+        pspikedir=temp(directory("{sample}_and_spike-primaryseqnorna")),
+    container: "docker://ghcr.io/vdblab/bowtie2:2.5.0"
+    shell:"""
+    mkdir -p {output}
+    cp {input.mockdir}/* {output.pmockdir}/
+    cp {input.bindir}/* {output.pbindir}/
+    cp {input.assemblydir}/* {output.passemblydir}/
+
+    cp {input.indir}/*.fa {output.pbindir}
+    cp {input.indir}/*.fa {output.passemblydir}
+    cp {input.indir}/*.fa {output.pmockdir}
+    cp {input.indir}/*.fa {output.pspikedir}
+
+
+    # since we had already copied the non-split reference genomes,
+    # we need to remove them from pbindir, passemblydir, and pmockdir
+    # they aren't in pspikedir
+    for d in {output.pbindir} {output.passemblydir} {output.pmockdir}
+    do
+    rm ${{d}}/Salinibacter_ruber.fa ${{d}}/Haloarcula_hispanica.fa ${{d}}/Trichoderma_reesei.fa
+    done
+    """
+rule make_marker_masked_fastas:
+    input:
+        indir="{sample}_and_spike-allseqs",
+    output:
+        outdir=directory("{sample}_markersplit"),
+    shell:"""
+    # do something to popilate the outdir with two files per references: the markers, and the marker-masked orginal genome
+    """
+
+rule add_mpa_markers_dir:
+    input:
+        indir="{sample}_markersplit",
+        bindir="{sample}_and_bins-allseqs",
+        assemblydir="{sample}_and_assembly-allseqs",
+        mockdir="{sample}_and_mock-allseqs",
+    output:
+        pbindir=temp(directory("{sample}_and_bins-spikemarkers")),
+        passemblydir=temp(directory("{sample}_and_assembly-spikemarkers")),
+        pmockdir=temp(directory("{sample}_and_mock-spikemarkers")),
+        pspikedir=temp(directory("{sample}_and_spike-spikemarkers")),
+    container: "docker://ghcr.io/vdblab/bowtie2:2.5.0"
+    shell:"""
+    mkdir -p {output}
+    cp {input.mockdir}/* {output.pmockdir}/
+    cp {input.bindir}/* {output.pbindir}/
+    cp {input.assemblydir}/* {output.passemblydir}/
+
+    cp {input.indir}/*.fa {output.pbindir}
+    cp {input.indir}/*.fa {output.passemblydir}
+    cp {input.indir}/*.fa {output.pmockdir}
+    cp {input.indir}/*.fa {output.pspikedir}
+
+    # since we had already copied the non-split reference genomes,
+    # we need to remove them from pbindir, passemblydir, and pmockdir
+    # they aren't in pspikedir
+    # only delete the original fasta for the ones where we have the markers
     for d in {output.pbindir} {output.passemblydir} {output.pmockdir}
     do
     rm ${{d}}/Salinibacter_ruber.fa ${{d}}/Haloarcula_hispanica.fa ${{d}}/Trichoderma_reesei.fa

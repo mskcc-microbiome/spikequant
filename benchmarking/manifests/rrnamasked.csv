@@ -1,0 +1,6 @@
+Haloarcula_hispanica,no,benchmarking/spikes/rrnamasked/Haloarcula_hispanica_other_masked.fa
+Haloarcula_hispanica,yes,benchmarking/spikes/rrnamasked/Haloarcula_hispanica_primary_masked.fa
+Trichoderma_reesei,no,benchmarking/spikes/rrnamasked/Trichoderma_reesei_other.fa
+Trichoderma_reesei,yes,benchmarking/spikes/rrnamasked/Trichoderma_reesei_primary.fa
+Salinibacter_ruber,no,benchmarking/spikes/rrnamasked/Salinibacter_ruber_other_masked.fa
+Salinibacter_ruber,yes,benchmarking/spikes/rrnamasked/Salinibacter_ruber_primary_masked.fa
