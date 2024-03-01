@@ -10,7 +10,7 @@ import pandas as  pd
 
 manif_base = [f"{rep}_depth10000000_spike{perc}" for rep in range(1,6) for perc in ["0.00000", "0.00001", "0.00010", "0.00100", "0.01000", "0.10000", "1.00000"]]
 
-pathbase="/lila/data/brinkvd/users/watersn/spikequant/benchmarking/data/"
+pathbase=config["benchmarkdata"]
 
 manif = "R1s,R2s,bindir,assembly\n" + "\n".join([f"{pathbase}{x}_R1.fastq.gz,{pathbase}{x}_R2.fastq.gz,{pathbase}metawrap/refined_binning_{x}/metawrap_70_10_bins/,{pathbase}spades_{x}.assembly.fasta" for x in manif_base])
 

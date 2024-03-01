@@ -9,5 +9,5 @@ head -n 1 benchmarking/data/3_depth10000000_spike0.10000.statsfastq |  tr -s " "
 ## Executing the Benchmarking dataset
 
 ```
-snakemake --snakefile benchmarking/run.smk
+snakemake --snakefile benchmarking/run.smk --config benchmarkdata=$PWD/benchmarking/data/
 ```
