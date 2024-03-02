@@ -95,5 +95,5 @@ Haloarcula_hispanica,yes,$PWD/benchmarking/spikes/split/Haloarcula_hispanica_pri
 ## Executing the Benchmarking dataset
 
 ```
-snakemake --snakefile benchmarking/run.smk --config benchmarkdata=$PWD/benchmarking/data/ spike_manifests=[$PWD/benchmarking/manifests/raw.csv] testdata_config=$PWD/benchmarking/benchmarking_sim_data_config.yaml zymo_genomes=$PWD/D6331.refseq/genomes/
+snakemake --snakefile benchmarking/run.smk --directory $PWD/benchmarking/v2/ --config benchmarkdata=$PWD/benchmarking/data/ spike_manifests=[$PWD/benchmarking/manifests/raw.csv,$PWD/benchmarking/manifests/rrnamasked.csv,$PWD/benchmarking/manifests/split.csv] testdata_config=$PWD/benchmarking/benchmarking_sim_data_config.yaml zymo_genomes=$PWD/D6331.refseq/genomes/ -n
 ```

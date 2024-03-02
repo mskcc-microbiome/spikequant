@@ -60,10 +60,10 @@ localrules:
 
 rule all:
     input:
-        f"coverm/{config['sample']}_bins.coverage_mqc.tsv",
+        f"coverm/{config['sample']}.coverage_mqc.tsv",
         f'{config["sample"]}_nospike_R1.fastq.gz',
         f'{config["sample"]}_nospike_R2.fastq.gz',
-        f'{config{"sample"}_ani_results.tsv',
+        f'{config["sample"]}_ani_results.tsv',
 
 def get_spike_abs_paths(wildcards):
 #    return [os.path.join(os.path.dirname(config["spiketable"]), p) for p in SPIKEDF.path.tolist()]
@@ -76,7 +76,7 @@ rule copy_spikes_and_offtarget:
         # this has to be a param to support "None"
         offtarget=config["offtarget"],
     output:
-        bindir=temp(directory("{sample}_bins_with_spikes_raw"))
+        bindir=temp(directory("{sample}_with_spikes_raw"))
     run:
         os.makedirs(output.bindir)
         for spike in input.spikes:
@@ -98,7 +98,7 @@ rule copy_spikes_and_offtarget:
 #     input:
 #         bindir=config["bindir"],
 #     output:
-#         bindir=temp(directory("{sample}_bins_with_spikes_raw"))
+#         bindir=temp(directory("{sample}_with_spikes_raw"))
 #     shell:"""
 #     mkdir {output.bindir}
 #     cp {input.bindir}/* {output.bindir}/
@@ -111,7 +111,7 @@ rule copy_spikes_and_offtarget:
 
 rule fastani:
     input:
-        bindir="{sample}_bins_with_spikes_raw"
+        bindir="{sample}_with_spikes_raw"
     output:
         csv="{sample}_ani_results.tsv",
         manifest="{sample}_manifest.txt"
@@ -127,7 +127,7 @@ rule ani_filter:
     """
     input:
         csv="{sample}_ani_results.tsv",
-        bindir="{sample}_bins_with_spikes_raw",
+        bindir="{sample}_with_spikes_raw",
         manifest="{sample}_manifest.txt",
     output:
         pairs_for_vis="{sample}_close_ani.tsv",
@@ -164,7 +164,7 @@ rule ani_filter:
                             bin_index = 1
                         else:
                             bin_index = 0
-                    contigs_to_ignore.append([query, reference][bin_index])
+                        contigs_to_ignore.append([query, reference][bin_index])
         os.makedirs(output.bindir)
         with open(input.manifest, "r") as inf:
             for line in inf:
@@ -184,7 +184,7 @@ rule ani_vis:
     """
     input:
         pairs_for_vis="{sample}_close_ani.tsv",
-#        bindir="{sample}_bins_with_spikes_raw",
+#        bindir="{sample}_with_spikes_raw",
     output:
         figdir=directory("{sample}_bin_ref_homology_figures"),
     container:"docker://ghcr.io/vdblab/fastani:1.34"
@@ -226,11 +226,12 @@ rule coverm:
 #        bindir=rules.ani_filter.output.bindir,
         bindir="{sample}_clean",
     output:
-        mqc='coverm/{sample}_bins.coverage_mqc.tsv',
+        mqc='coverm/{sample}.coverage_mqc.tsv',
         bam=os.path.join('coverm/{sample}_bams/', 'coverm-genome.' + os.path.basename(config["R1"][0]) + ".bam"),
     params:
         fastq_string = lambda wc, input: " ".join([config["R1"][x] + " " + config["R2"][x] for x in range(0, len(config["R1"]))]),
-        mapper=mapper
+        mapper=mapper,
+        coverm_params = "--min-read-percent-identity .97 --min-read-aligned-percent .97 --proper-pairs-only --exclude-supplementary"
     resources:
         runtime=4*60
     container:
@@ -244,6 +245,7 @@ rule coverm:
           --methods mean relative_abundance trimmed_mean \
             covered_bases variance length count reads_per_base rpkm tpm \
           --output-file {output.mqc}.tmp --threads {threads} \
+          {params.coverm_params} \
           --bam-file-cache-directory $(dirname  {output.bam}) \
           --min-covered-fraction 0 \
           --genome-fasta-extension fa

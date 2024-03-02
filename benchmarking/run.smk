@@ -66,16 +66,16 @@ envvars:
 
 profile = os.getenv("SNAKEMAKE_PROFILE")
 
+# "raw|split|rrnamasked",
 wildcard_constraints:
-    quanttype="raw|split|rrnamasked",
+    quanttype="|".join(spike_manifests.keys()),
     offtarget="none|zymo|bins|assembly",
-#    dbtype="spike-allseqs|assembly-allseqs|bins-allseqs|mock-allseqs|spike-primaryseq|assembly-primaryseq|bins-primaryseq|mock-primaryseq|spike-primaryseqnorna|assembly-primaryseqnorna|bins-primaryseqnorna|mock-primaryseqnorna|spike-spikemarkers|assembly-spikemarkers|bins-spikemarkers|mock-spikemarkers",
     mapper="minimap2-sr|bwa-mem",
 
 
 rule all:
     input:
-        expand("coverm/{sample}_bins.coverage_mqc.tsv", sample=samples),
+        expand("{sample}/coverm/{sample}.coverage_mqc.tsv", sample=samples),
         f"all_coverage.tsv"
 
 def get_sample_base(sample):
@@ -90,9 +90,9 @@ def get_offtarget_from_sample(wildcards):
     if offtarget == "none":
         return "none"
     elif offtarget == "bins":
-        return lambda wildcards: df.loc[get_sample_base(wildcards.sample), "bindir"].split(",")
+        return df.loc[get_sample_base(wildcards.sample), "bindir"].split(",")
     elif offtarget == "assembly":
-        return lambda wildcards: df.loc[get_sample_base(wildcards.sample), "assembly"].split(",")
+        return df.loc[get_sample_base(wildcards.sample), "assembly"].split(",")
     elif offtarget == "zymo":
         return zymo
     else:
@@ -103,13 +103,18 @@ def get_spiketable_from_sample(wildcards):
     return(spike_manifests[qtype])
 
 rule run_benchmarking_pipeline:
+    # same as in main pipeline, the offtarget is given as a param so it can be
+    # optional when specified as "none"
+    # the target is specified relative to --directory
     input:
         R1s=lambda wildcards: df.loc[get_sample_base(wildcards.sample), "R1s"].split(","),
         R2s=lambda wildcards: df.loc[get_sample_base(wildcards.sample), "R2s"].split(","),
         spiketable=get_spiketable_from_sample,
     output:
-        "coverm/{sample}_bins.coverage_mqc.tsv"
+        coverm="{sample}/coverm/{sample}.coverage_mqc.tsv"
     params:
+#        offtarget=lambda wc: get_offtarget_from_sample(wc),
+        target = lambda wc, output: os.path.join("coverm", os.path.basename(output.coverm)),
         offtarget=get_offtarget_from_sample,
         profile=profile,
         workflow_dir=workflow.current_basedir,
@@ -118,21 +123,21 @@ rule run_benchmarking_pipeline:
     shell:"""
     export SNAKEMAKE_PROFILE={params.profile}
     snakemake --snakefile {params.workflow_dir}/../workflow/Snakefile --directory {wildcards.sample}/ --config R1=[{input.R1s}] \
-    R2=[{input.R2s}] offtarget={params.offtarget} spiketable={input.spiketable} -f {output} \
+    R2=[{input.R2s}] offtarget={params.offtarget} spiketable={input.spiketable} -f {params.target} \
     --rerun-incomplete
     """
 
 
 rule tabulate:
     input:
-        expand("coverm/{sample}_bins.coverage_mqc.tsv", sample=samples)
+        expand("{sample}/coverm/{sample}.coverage_mqc.tsv", sample=samples)
     output:
         f"all_coverage.tsv"
     shell: """
     echo -e "sample\tGenome\tMean\tRelative_Abundance_Perc\tTrimmed_Mean\tCovered_Bases\tVariance\tLength\tRead_Count\tReads_per_base\tRPKM\tTPM" > {output[0]}
     for rep in {input}
     do
-    base=$( basename $rep  | sed "s|_bins.coverage_mqc.tsv||g")
+    base=$( basename $rep  | sed "s|.coverage_mqc.tsv||g")
     tail -n+4 $rep | sed "s|^|${{base}}\t|g" >> {output[0]}
     done
     """
