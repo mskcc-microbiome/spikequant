@@ -81,7 +81,7 @@ rule copy_spikes_and_offtarget:
         os.makedirs(output.bindir)
         for spike in input.spikes:
             shutil.copyfile(spike, os.path.join(output.bindir, os.path.basename(spike)))
-        if params.offtarget == "None":
+        if params.offtarget.lower() == "none":
             pass
         elif os.path.isdir(params.offtarget):
             print("offtartget is directory")
@@ -90,7 +90,7 @@ rule copy_spikes_and_offtarget:
             for fasta in fastas:
                 shutil.copy(fasta, os.path.join(output.bindir, os.path.basename(fasta)))
         else:
-            assert os.path.exists(params.offtarget), f"config['offtarget'] is not a file or a directory"
+            assert os.path.exists(params.offtarget), f"{config['offtarget']} is not a file or a directory"
             shutil.copy(params.offtarget, os.path.join(output.bindir, os.path.basename(params.offtarget)))
 
 
