@@ -9,7 +9,19 @@ head -n 1 benchmarking/data/3_depth10000000_spike0.10000.statsfastq |  tr -s " "
 ## Setting up benchmarking conditions
 There are several core things to vary: what spikes are used, what alignment method, and what set of off-target sequences should be considered (if any).
 
+For the off targets, we considered 4 options:
+-  no offtarget sequnces
+- the sample's assembly
+- the sample's binned contigs
+- the GutZymo mock
 
+The Gutzymo mock can be downloaded as follows:
+
+
+```sh
+wget -N https://s3.amazonaws.com/zymo-files/BioPool/D6331.refseq.zip
+unzip D6331.refseq.zip
+```
 
 ### Raw Spikes
 ```
@@ -69,18 +81,19 @@ benchmarking/spikes/
     └── Trichoderma_reesei_primary.fa
 ```
 
-A manifest for the `split` spikes would look like the following:
+A manifest for the `split` spikes would look like the following, replacing $PWD so that the paths are absolute:
 ```
-Trichoderma_reesei,no,benchmarking/spikes/split/Trichoderma_reesei_other.fa
-Trichoderma_reesei,yes,benchmarking/spikes/split/Trichoderma_reesei_primary.fa
-Salinibacter_ruber,no,benchmarking/spikes/split/Salinibacter_ruber_other.fa
-Salinibacter_ruber,yes,benchmarking/spikes/split/Salinibacter_ruber_primary.fa
-Haloarcula_hispanica,no,benchmarking/spikes/split/Haloarcula_hispanica_other.fa
-Haloarcula_hispanica,yes,benchmarking/spikes/split/Haloarcula_hispanica_primary.fa
+Trichoderma_reesei,no,$PWD/benchmarking/spikes/split/Trichoderma_reesei_other.fa
+Trichoderma_reesei,yes,$PWD/benchmarking/spikes/split/Trichoderma_reesei_primary.fa
+Salinibacter_ruber,no,$PWD/benchmarking/spikes/split/Salinibacter_ruber_other.fa
+Salinibacter_ruber,yes,$PWD/benchmarking/spikes/split/Salinibacter_ruber_primary.fa
+Haloarcula_hispanica,no,$PWD/benchmarking/spikes/split/Haloarcula_hispanica_other.fa
+Haloarcula_hispanica,yes,$PWD/benchmarking/spikes/split/Haloarcula_hispanica_primary.fa
 ```
+
 
 ## Executing the Benchmarking dataset
 
 ```
-snakemake --snakefile benchmarking/run.smk --config benchmarkdata=$PWD/benchmarking/data/
+snakemake --snakefile benchmarking/run.smk --config benchmarkdata=$PWD/benchmarking/data/ spike_manifests=[$PWD/benchmarking/manifests/raw.csv] testdata_config=$PWD/benchmarking/benchmarking_sim_data_config.yaml zymo_genomes=$PWD/D6331.refseq/genomes/
 ```

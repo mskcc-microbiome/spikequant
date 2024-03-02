@@ -5,6 +5,11 @@ Remove and Quantify Organism Spike Reads from Sequencing Data
 
 Must have snakemake available in `PATH`.
 
+## quick start
+```
+snakemake --directory testresults --snakefile workflow/Snakefile --config spiketable=$PWD/benchmarking/manifests/raw.csv
+```
+
 ### dependencies
 Either execute snakemake with `--use-singularity` (or the updated syntax for snakemake 8), a snakemake profile with singularity configured, or from a conda environment with the following dependencies precent:
 
@@ -29,6 +34,12 @@ snakemake --snakefile testdata/Snakefile --directory $PWD/testdata/data/
 
 configure the types of data it creates via the config file in testdata/config.yaml.  We have commited a 100k read dataset to the repo, along with its assembly and binning results. Due to the poor quality of this low-depth assembly, we don't bother running the bin refinement step of metawrap.
 
+## Run `spikequant` on the testdata
+
+```
+snakemake --directory testresults
+
+```
 ## Benchmarking
 The benchmarking workflow compares alignment methods and off-target database effectiveness for spike remove
 Benchmarking can be run on the Test data in the example config running the following, noting that `--directory` must be a location one file level deeper than the root for the relative paths to work.
