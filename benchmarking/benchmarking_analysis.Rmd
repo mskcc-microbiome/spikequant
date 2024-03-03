@@ -9,45 +9,45 @@ library(patchwork)
 ```
 
 
-
+# data preparation
+Due to rounding issues during the sequencing data simulation with ART, we aren't guaranteed an exact total of the targeted 20M reads per sample. The first step is to read in the data summary file to calculate the per-sample total depth.
 
 ```{r}
-if (!file.exists("benchmarking/data_summary.tsv")) system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/data_summary.tsv benchmarking/data_summary.tsv")
-if (!file.exists("benchmarking/results/merged_benchmarking_coverage.tsv")) system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/results/merged_benchmarking_coverage.tsv benchmarking/results/merged_benchmarking_coverage.tsv")
+#if (!file.exists("benchmarking/data_summary.tsv")) system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/data_summary.tsv benchmarking/data_summary.tsv")
+#if (!file.exists("benchmarking/results/merged_benchmarking_coverage.tsv")) system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/results/merged_benchmarking_coverage.tsv benchmarking/results/merged_benchmarking_coverage.tsv")
 
 spikes <- c("Haloarcula_hispanica", "Salinibacter_ruber", "Trichoderma_reesei")
 spikes_pri <- c("Haloarcula_hispanica_primary", "Salinibacter_ruber_primary", "Trichoderma_reesei_primary" )
 # read in the data summary to get the actual totals 
 data_summary_most <- read.csv("benchmarking/data_summary.tsv", sep="\t") %>%
-  filter(!grepl("spike0.00000", file)) %>% 
+  #filter(!grepl("spike0.00000", file)) %>% 
   mutate(
-    num_seqs=as.numeric(gsub(",", "", num_seqs)),
+    true_count=as.numeric(gsub(",", "", num_seqs)),
     sample=gsub(".*?_(\\d+_depth.*?_spike.*?)_.*", "\\1", file),
     Genome = gsub(".*?_(\\d+_depth.*?_spike.*?)_(.*).fasta.*", "\\2", file),
     is_spike =Genome %in% c(spikes, spikes_pri)
   ) %>% 
   group_by(sample,is_spike, Genome) %>% 
-  summarize(num_seqs = sum(num_seqs)) %>%
+  summarize(true_count = sum(true_count)) %>%
   ungroup() %>%
   group_by(sample) %>% 
-  mutate(total = sum(num_seqs)) %>%
+  mutate(total = sum(true_count)) %>%
   ungroup() %>% 
   filter( is_spike)%>% 
-  select(sample, Genome, num_seqs, total) %>% 
+  select(sample, Genome, true_count, total) %>% 
   distinct()
 # parse the ones lacking any spikes so we still have totals
 # the left join with the dummy data makes the merging below more straightforward
 data_summary_nospike <- read.csv("benchmarking/data_summary.tsv", sep="\t") %>% 
   filter(grepl("spike0.00000", file)) %>% 
-    filter(!grepl("tmp.*fq", file)) %>% 
   mutate(
-    num_seqs=as.numeric(gsub(",", "", num_seqs)),
-    sample=gsub("(\\d+_depth.*?_spike.*?)_.*", "\\1", file),
+    true_count=as.numeric(gsub(",", "", num_seqs)),
+    sample=gsub(".*?_(\\d+_depth.*?_spike.*?)_.*", "\\1", file),
   ) %>% 
  group_by(sample) %>% 
-  summarize(total = sum(num_seqs)) %>% ungroup() %>%
-  mutate(num_seqs=0) %>% 
-  left_join(data.frame(num_seqs=rep(0, length(spikes)), Genome=spikes), relationship= "many-to-many")
+  summarize(total = sum(true_count)) %>% ungroup() %>%
+  mutate(true_count=0) %>% 
+  left_join(data.frame(true_count=rep(0, length(spikes)), Genome=spikes), relationship= "many-to-many")
 
 data_summary <- bind_rows(data_summary_most,data_summary_nospike) %>% 
   rename("genome_base" = "Genome")
@@ -71,13 +71,14 @@ tmp <- read.csv("benchmarking/results/merged_benchmarking_coverage.tsv", sep="\t
   mutate(full_genome = max(Length)) %>% 
   ungroup() %>% 
   mutate(counts = (Read_Count * (full_genome/100000))/(Length/100000)) %>% 
-  select(sample, dbtype, quantref, aligner, is_spike, target, Genome, Length, genome_base, full_genome, Read_Count, counts, num_seqs, total) %>% 
-  mutate(counts_perc = num_seqs/counts)
+  select(sample, dbtype, quantref, aligner, is_spike, target, Genome, Length, genome_base, full_genome, Read_Count, counts, true_count, total) %>% 
+  mutate(count_deviation_percent = (counts-true_count)/(true_count)) %>% 
+  mutate(count_percent = counts/true_count)
 
-
+if (interactive()){
 View(tmp %>% filter(is_spike) %>% filter(grepl("1_depth10000000_spike0.00000", sample), aligner == "bwa-mem", dbtype=="bins"))
-# TODO: recalculate abundance for whole spikes based off primary only
-
+View(tmp %>% filter(is_spike) %>% filter(grepl("1_depth10000000_spike0.10000", sample), aligner == "bwa-mem", dbtype=="bins"))
+}
 # ggplot(tmp %>% filter(is_spike) %>% 
 # #         filter(quantref == "all") %>% 
 # #         filter(dbtype != "bins") %>%
@@ -91,9 +92,10 @@ View(tmp %>% filter(is_spike) %>% filter(grepl("1_depth10000000_spike0.00000", s
 #   theme(axis.text.x = element_text(angle=45, hjust=1))
 
 
-ggplot(tmp %>% filter(is_spike), aes(y=interaction(target, dbtype), x=counts_perc, color=Genome)) +
+ggplot(tmp %>% filter(is_spike) %>% 
+         filter(!is.infinite(count_percent)), aes(y=dbtype, x=count_percent, color=Genome)) +
   geom_jitter(width=0) + 
-  facet_grid( aligner+quantref ~  target, scales="free", space = "free") + 
+  facet_grid( aligner ~  ., scales="free", space = "free") + 
   theme(axis.text.x = element_text(angle=45, hjust=1)) + scale_color_brewer(palette = "Paired")  
 
 ggplot(tmp %>% filter(is_spike) %>% filter(target > 0), aes(y=target, x=counts_perc, color=dbtype)) +
