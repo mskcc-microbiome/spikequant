@@ -1,4 +1,6 @@
 # Generating Full Benchmark simulated dataset
+A yaml config file is used to define the number of replicates the test data workflow generates, the total depth, and the proportion of the spikes in the sample.
+
 ```
 snakemake --snakefile testdata/Snakefile --directory $PWD/benchmarking/data/ --config benchmarking/benchmarking_sim_data_config.yaml
 
@@ -7,10 +9,10 @@ head -n 1 benchmarking/data/3_depth10000000_spike0.10000.statsfastq |  tr -s " "
 ```
 
 ## Setting up benchmarking conditions
-There are several core things to vary: what spikes are used, what alignment method, and what set of off-target sequences should be considered (if any).
+There are 3 main things to vary: what spikes are used, what alignment method, and what set of off-target sequences should be considered (if any).
 
 For the off targets, we considered 4 options:
--  no offtarget sequnces
+- no offtarget sequnces
 - the sample's assembly
 - the sample's binned contigs
 - the GutZymo mock
@@ -95,5 +97,5 @@ Haloarcula_hispanica,yes,$PWD/benchmarking/spikes/split/Haloarcula_hispanica_pri
 ## Executing the Benchmarking dataset
 
 ```
-snakemake --snakefile benchmarking/run.smk --directory $PWD/benchmarking/v2/ --config benchmarkdata=$PWD/benchmarking/data/ spike_manifests=[$PWD/benchmarking/manifests/raw.csv,$PWD/benchmarking/manifests/rrnamasked.csv,$PWD/benchmarking/manifests/split.csv] testdata_config=$PWD/benchmarking/benchmarking_sim_data_config.yaml zymo_genomes=$PWD/D6331.refseq/genomes/ -n
+snakemake --snakefile benchmarking/run.smk --directory $PWD/benchmarking/v2/ --config benchmarkdata=$PWD/benchmarking/data/ spike_manifests=[$PWD/benchmarking/manifests/raw.csv,$PWD/benchmarking/manifests/rrnamasked.csv,$PWD/benchmarking/manifests/split.csv] testdata_config=$PWD/benchmarking/benchmarking_sim_data_config.yaml zymo_genomes=$PWD/D6331.refseq/genomes/
 ```

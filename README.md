@@ -5,11 +5,6 @@ Remove and Quantify Organism Spike Reads from Sequencing Data
 
 Must have snakemake available in `PATH`.
 
-## quick start
-```
-snakemake --directory testresults --snakefile workflow/Snakefile --config spiketable=$PWD/benchmarking/manifests/raw.csv
-```
-
 ### dependencies
 Either execute snakemake with `--use-singularity` (or the updated syntax for snakemake 8), a snakemake profile with singularity configured, or from a conda environment with the following dependencies precent:
 
@@ -18,11 +13,6 @@ Either execute snakemake with `--use-singularity` (or the updated syntax for sna
 - spades
 - metawrap
 - seqkit
-
-
-## Structure
-Repo has been structured according to Snakemake's best practices. There are two supplementary workflows outside of this structure, to keep them from being imported when using tools like snakedeploy.  these are a benchmarking workflow and a test data generating workflow
-
 
 
 ## Test Data
@@ -37,15 +27,8 @@ configure the types of data it creates via the config file in testdata/config.ya
 ## Run `spikequant` on the testdata
 
 ```
-snakemake --directory testresults
-
+snakemake --directory testresults --snakefile workflow/Snakefile --config spiketable=$PWD/benchmarking/manifests/raw.csv
 ```
+
 ## Benchmarking
-The benchmarking workflow compares alignment methods and off-target database effectiveness for spike remove
-Benchmarking can be run on the Test data in the example config running the following, noting that `--directory` must be a location one file level deeper than the root for the relative paths to work.
-
-```
-snakemake --snakefile benchmarking/Snakefile --directory $PWD/benchmarking_results/
-```
-
-Note that the resulting coverages are wonky for the small test dataset because fastani's threshold of 3000bp excludes most of the assembly or bins, which effectively bypasses the dereplication.
+The benchmarking workflow compares alignment methods, off-target database, and spike preprocessing methods to identify optimal usage parameters.  Details of the benchmarking can be found in [benchmarking/README.md](benchmarking/README.md)].
