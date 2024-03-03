@@ -1,8 +1,8 @@
 sample: "tmp"
 R1: ["../testdata/data/1_depth100000_spike0.10000_R1.fastq.gz"]
 R2: ["../testdata/data/1_depth100000_spike0.10000_R2.fastq.gz"]
-bindir: "../testdata/data/metawrap/rawbinning_1_depth100000_spike0.10000/concoct/concoct_bins/"
-assembly: "../testdata/data/spades_1_depth100000_spike0.10000.assembly.fasta"
+offtarget: "../testdata/data/metawrap/rawbinning_1_depth100000_spike0.10000/concoct/concoct_bins/"
+#assembly: "../testdata/data/spades_1_depth100000_spike0.10000.assembly.fasta"
 
 # references
 

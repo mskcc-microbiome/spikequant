@@ -2,16 +2,39 @@ import os
 import json
 import yaml
 import shutil
-
+import glob
+import pandas as pd
 from pathlib import Path
 from snakemake.utils import validate
 
-
-include: "common.smk"
-
-
 # the str is needed as when running from github workflow.current_basedir is a Githubfile, not a string or a path so os.path objects
-configfile: os.path.join(str(workflow.current_basedir), "../../config/config.yaml")
+configfile: os.path.join(str(workflow.current_basedir), "../config/config.yaml")
+
+
+#include: "common.smk"
+
+
+# ToDo change this to schema validation
+assert "spiketable" in config.keys(), "spiketable is a required config argument!"
+
+mapper = "minimap2-sr"
+if "mapper" in config.keys():
+    assert "mapper" in ["minimap2-sr", "bwa-mem"], "aligner must be either minimap2-sr or bwa-mem"
+    mapper = config["mapper"]
+
+offtarget = None
+if "offtarget" in config.keys():
+    offtarget = config["offtarget"]
+
+
+
+
+
+
+
+SPIKEDF = pd.read_csv(config["spiketable"], sep=",", names=['name', 'use_for_quant', "path"], header=None)
+#df["sample"] = manif_base
+#df = df.set_index("sample")
 
 
 envvars:
@@ -30,7 +53,6 @@ localrules:
     ani_filter
 
 
-covermreports = f'coverm/{config["sample"]}_bins.coverage_mqc.tsv'
 
 
 
@@ -38,29 +60,58 @@ covermreports = f'coverm/{config["sample"]}_bins.coverage_mqc.tsv'
 
 rule all:
     input:
-        covermreports,
-        f"coverm/{config['sample']}_bins.coverage_mqc.tsv",
+        f"coverm/{config['sample']}.coverage_mqc.tsv",
         f'{config["sample"]}_nospike_R1.fastq.gz',
         f'{config["sample"]}_nospike_R2.fastq.gz',
+        f'{config["sample"]}_ani_results.tsv',
 
-rule add_spikes_to_bin_dir:
+def get_spike_abs_paths(wildcards):
+#    return [os.path.join(os.path.dirname(config["spiketable"]), p) for p in SPIKEDF.path.tolist()]
+    return SPIKEDF.path.tolist()
+
+rule copy_spikes_and_offtarget:
     input:
-        bindir=config["bindir"],
+        spikes = get_spike_abs_paths,
+    params:
+        # this has to be a param to support "None"
+        offtarget=config["offtarget"],
     output:
-        bindir=temp(directory("{sample}_bins_with_spikes_raw"))
-    shell:"""
-    mkdir {output.bindir}
-    cp {input.bindir}/* {output.bindir}/
-    curl -o - ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/013/045/GCA_000013045.1_ASM1304v1/GCA_000013045.1_ASM1304v1_genomic.fna.gz | gunzip > {output.bindir}/Salinibacter_ruber.fa
-    # getting Trichoderma reesei  QM6a instead of  Trichoderma reesei ATCC 13631 .  Might be fine license-wise but not sure
-    curl -o - ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/167/675/GCF_000167675.1_v2.0/GCF_000167675.1_v2.0_genomic.fna.gz | gunzip  > {output.bindir}/Trichoderma_reesei.fa
-    # getting CBA1121 instead of Haloarcula hispanica ATCC 33960  for the same reason.
-    curl -o - ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/008/729/095/GCF_008729095.1_ASM872909v1/GCF_008729095.1_ASM872909v1_genomic.fna.gz | gunzip  > {output.bindir}/Haloarcula_hispanica.fa
-    """
+        bindir=temp(directory("{sample}_with_spikes_raw"))
+    run:
+        os.makedirs(output.bindir)
+        for spike in input.spikes:
+            shutil.copyfile(spike, os.path.join(output.bindir, os.path.basename(spike)))
+        if params.offtarget.lower() == "none":
+            pass
+        elif os.path.isdir(params.offtarget):
+            print("offtartget is directory")
+            fastas = glob.glob(params.offtarget + "*fa") + glob.glob(params.offtarget + "*fasta") + glob.glob(params.offtarget + "*fna") + \
+                glob.glob(params.offtarget + "*fa.gz") + glob.glob(params.offtarget + "*fasta.gz") + glob.glob(params.offtarget + "*fna.gz")
+            for fasta in fastas:
+                shutil.copy(fasta, os.path.join(output.bindir, os.path.basename(fasta)))
+        else:
+            assert os.path.exists(params.offtarget), f"{config['offtarget']} is not a file or a directory"
+            shutil.copy(params.offtarget, os.path.join(output.bindir, os.path.basename(params.offtarget)))
+
+
+# rule add_spikes_to_bin_dir:
+#     input:
+#         bindir=config["bindir"],
+#     output:
+#         bindir=temp(directory("{sample}_with_spikes_raw"))
+#     shell:"""
+#     mkdir {output.bindir}
+#     cp {input.bindir}/* {output.bindir}/
+#     curl -o - ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/013/045/GCA_000013045.1_ASM1304v1/GCA_000013045.1_ASM1304v1_genomic.fna.gz | gunzip > {output.bindir}/Salinibacter_ruber.fa
+#     # getting Trichoderma reesei  QM6a instead of  Trichoderma reesei ATCC 13631 .  Might be fine license-wise but not sure
+#     curl -o - ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/167/675/GCF_000167675.1_v2.0/GCF_000167675.1_v2.0_genomic.fna.gz | gunzip  > {output.bindir}/Trichoderma_reesei.fa
+#     # getting CBA1121 instead of Haloarcula hispanica ATCC 33960  for the same reason.
+#     curl -o - ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/008/729/095/GCF_008729095.1_ASM872909v1/GCF_008729095.1_ASM872909v1_genomic.fna.gz | gunzip  > {output.bindir}/Haloarcula_hispanica.fa
+#     """
 
 rule fastani:
     input:
-        bindir="{sample}_bins_with_spikes_raw"
+        bindir="{sample}_with_spikes_raw"
     output:
         csv="{sample}_ani_results.tsv",
         manifest="{sample}_manifest.txt"
@@ -76,12 +127,13 @@ rule ani_filter:
     """
     input:
         csv="{sample}_ani_results.tsv",
-        bindir="{sample}_bins_with_spikes_raw",
+        bindir="{sample}_with_spikes_raw",
         manifest="{sample}_manifest.txt",
     output:
         pairs_for_vis="{sample}_close_ani.tsv",
-        bindir=temp(directory("{sample}_bins_with_spikes")),
+        bindir=temp(directory("{sample}_clean")),
     params:
+        spike_names = set(SPIKEDF.name.tolist()),
         ani_thresh = 95
     run:
         import os
@@ -103,13 +155,16 @@ rule ani_filter:
                 # threshold species-level
                 if float(ANI) < params.ani_thresh:
                     continue
-                if "Haloarcula_hispanica" in line or "Salinibacter_ruber" in line or "Trichoderma_reesei" in line:
-                    # determine if the bin resembing the cannonical reference is the ani query or the reference
-                    if "Haloarcula_hispanica" in query or "Salinibacter_ruber" in query or "Trichoderma_reesei" in query:
-                        bin_index  = 1
-                    else:
-                        bin_index  = 0
-                    contigs_to_ignore.append([query, reference][bin_index])
+                line_is_spike = False
+                bin_index = None
+                for spike_name in params.spike_names:
+                    if spike_name in line:
+                        line_is_spike = True
+                        if spike_name in query:
+                            bin_index = 1
+                        else:
+                            bin_index = 0
+                        contigs_to_ignore.append([query, reference][bin_index])
         os.makedirs(output.bindir)
         with open(input.manifest, "r") as inf:
             for line in inf:
@@ -129,7 +184,7 @@ rule ani_vis:
     """
     input:
         pairs_for_vis="{sample}_close_ani.tsv",
-        bindir="{sample}_bins_with_spikes_raw",
+#        bindir="{sample}_with_spikes_raw",
     output:
         figdir=directory("{sample}_bin_ref_homology_figures"),
     container:"docker://ghcr.io/vdblab/fastani:1.34"
@@ -168,12 +223,15 @@ rule coverm:
     input:
         R1=config["R1"],
         R2=config["R2"],
-        bindir=rules.ani_filter.output.bindir,
+#        bindir=rules.ani_filter.output.bindir,
+        bindir="{sample}_clean",
     output:
-        mqc='coverm/{sample}_bins.coverage_mqc.tsv',
+        mqc='coverm/{sample}.coverage_mqc.tsv',
         bam=os.path.join('coverm/{sample}_bams/', 'coverm-genome.' + os.path.basename(config["R1"][0]) + ".bam"),
     params:
-        fastq_string = lambda wc, input: " ".join([config["R1"][x] + " " + config["R2"][x] for x in range(0, len(config["R1"]))])
+        fastq_string = lambda wc, input: " ".join([config["R1"][x] + " " + config["R2"][x] for x in range(0, len(config["R1"]))]),
+        mapper=mapper,
+        coverm_params = "--min-read-percent-identity .97 --min-read-aligned-percent .97 --proper-pairs-only --exclude-supplementary"
     resources:
         runtime=4*60
     container:
@@ -183,10 +241,11 @@ rule coverm:
         """
         coverm genome --genome-fasta-directory {input.bindir} \
           --coupled {params.fastq_string} \
-          --mapper minimap2-sr \
+          --mapper {params.mapper} \
           --methods mean relative_abundance trimmed_mean \
             covered_bases variance length count reads_per_base rpkm tpm \
           --output-file {output.mqc}.tmp --threads {threads} \
+          {params.coverm_params} \
           --bam-file-cache-directory $(dirname  {output.bam}) \
           --min-covered-fraction 0 \
           --genome-fasta-extension fa
@@ -216,20 +275,36 @@ rule get_nonspike_reads:
         R2tmpspike=lambda wc, output: output.spikeR2.replace(".gz", ""),
     container: "docker://ghcr.io/vdblab/bowtie2:2.5.0"
     shell:"""
+    set -eoux pipefail
     # get header, turn into a BED file
     samtools view -H  {input.bam} | grep "Salinibacter\|Trichoderma\|Haloarcula" | cut -f 2,3 | sed "s|SN:||g" | sed "s|LN:|1\t|g" | sort -k1,1 -k2,2n > {output.bed}
 
     # inspired by https://www.biostars.org/p/473204/
-    samtools view -L {output.bed} -U unsorted_{output.nonspike} -o tmp_unsorted_spikes.bam -@ {threads} {input.bam}
+    samtools view -L {output.bed} -U unsorted_{output.nonspike} -o tmp_unsorted_spikes_{wildcards.sample}.bam -@ {threads} {input.bam}
     # make sure you NAME-sort before running samtools fastq https://www.biostars.org/p/454942/
     samtools sort -n -o {output.nonspike} unsorted_{output.nonspike}
-    samtools sort -n -o tmp_sorted_spikes.bam tmp_unsorted_spikes.bam
+    samtools sort -n -o tmp_sorted_spikes_{wildcards.sample}.bam tmp_unsorted_spikes_{wildcards.sample}.bam
 
-    rm unsorted_{output.nonspike} tmp_unsorted_spikes.bam
     # samtools can ouput copressed fastqs but it isn't multithreaded as fast as pigz
     samtools fastq -1 {params.R1tmp} -2 {params.R2tmp} -0 /dev/null -s /dev/null -n -@ {threads} {output.nonspike}
-    samtools fastq -1 {params.R1tmpspike} -2 {params.R2tmpspike} -0 /dev/null -s /dev/null -n -@ {threads} tmp_sorted_spikes.bam
+    samtools fastq -1 {params.R1tmpspike} -2 {params.R2tmpspike} -0 /dev/null -s /dev/null -n -@ {threads} tmp_sorted_spikes_{wildcards.sample}.bam
     samtools flagstat {output.nonspike}
-    rm tmp_*
-    pigz ./*fastq
+
+    rm unsorted_{output.nonspike} tmp_unsorted_spikes_{wildcards.sample}.bam tmp_sorted_spikes_{wildcards.sample}.bam
+    pigz {params.R1tmp}
+    pigz {params.R2tmp}
+    pigz {params.R1tmpspike}
+    pigz {params.R2tmpspike}
+    # samtools view -L {output.bed} -U unsorted_{output.nonspike} -o tmp_unsorted_spikes.bam -@ {threads} {input.bam}
+    # # make sure you NAME-sort before running samtools fastq https://www.biostars.org/p/454942/
+    # samtools sort -n -o {output.nonspike} unsorted_{output.nonspike}
+    # samtools sort -n -o tmp_sorted_spikes.bam tmp_unsorted_spikes.bam
+
+    # #rm unsorted_{output.nonspike} tmp_unsorted_spikes.bam
+    # # samtools can ouput copressed fastqs but it isn't multithreaded as fast as pigz
+    # samtools fastq -1 {params.R1tmp} -2 {params.R2tmp} -0 /dev/null -s /dev/null -n -@ {threads} {output.nonspike}
+    # samtools fastq -1 {params.R1tmpspike} -2 {params.R2tmpspike} -0 /dev/null -s /dev/null -n -@ {threads} tmp_sorted_spikes.bam
+    # samtools flagstat {output.nonspike}
+    # rm tmp_*
+    # pigz ./*fastq
     """
