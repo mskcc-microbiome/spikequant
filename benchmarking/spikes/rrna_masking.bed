@@ -1,0 +1,13 @@
+NZ_RQWK01000001.1	cmsearch	rRNA	411551	413022	.	+	.	ID=rna-EGO51_RS02085;Parent=gene-EGO51_RS02085;Dbxref=RFAM:RF01959;gbkey=rRNA;inference=COORDINATES: profile:INFERNAL:1.1.4;locus_tag=EGO51_RS02085;product=16S ribosomal RNA
+NZ_RQWK01000001.1	cmsearch	rRNA	413401	416331	.	+	.	ID=rna-EGO51_RS02095;Parent=gene-EGO51_RS02095;Dbxref=RFAM:RF02540;gbkey=rRNA;inference=COORDINATES: profile:INFERNAL:1.1.4;locus_tag=EGO51_RS02095;product=23S ribosomal RNA
+NZ_RQWK01000001.1	cmsearch	rRNA	416467	416589	.	+	.	ID=rna-EGO51_RS02100;Parent=gene-EGO51_RS02100;Dbxref=RFAM:RF00001;gbkey=rRNA;gene=rrf;inference=COORDINATES: profile:INFERNAL:1.1.4;locus_tag=EGO51_RS02100;product=5S ribosomal RNA
+NZ_RQWK01000001.1	cmsearch	rRNA	1952650	1952772	.	-	.	ID=rna-EGO51_RS09865;Parent=gene-EGO51_RS09865;Dbxref=RFAM:RF00001;gbkey=rRNA;gene=rrf;inference=COORDINATES: profile:INFERNAL:1.1.4;locus_tag=EGO51_RS09865;product=5S ribosomal RNA
+NZ_RQWK01000001.1	cmsearch	rRNA	1952909	1955839	.	-	.	ID=rna-EGO51_RS09870;Parent=gene-EGO51_RS09870;Dbxref=RFAM:RF02540;gbkey=rRNA;inference=COORDINATES: profile:INFERNAL:1.1.4;locus_tag=EGO51_RS09870;product=23S ribosomal RNA
+NZ_RQWK01000001.1	cmsearch	rRNA	1956210	1957681	.	-	.	ID=rna-EGO51_RS09875;Parent=gene-EGO51_RS09875;Dbxref=RFAM:RF01959;gbkey=rRNA;inference=COORDINATES: profile:INFERNAL:1.1.4;locus_tag=EGO51_RS09875;product=16S ribosomal RNA
+NZ_RQWK01000002.1	cmsearch	rRNA	545098	545220	.	+	.	ID=rna-EGO51_RS17720;Parent=gene-EGO51_RS17720;Dbxref=RFAM:RF00001;gbkey=rRNA;gene=rrf;inference=COORDINATES: profile:INFERNAL:1.1.4;locus_tag=EGO51_RS17720;product=5S ribosomal RNA
+NZ_RQWK01000003.1	cmsearch	rRNA	5321	6792	.	+	.	ID=rna-EGO51_RS18185;Parent=gene-EGO51_RS18185;Dbxref=RFAM:RF01959;gbkey=rRNA;inference=COORDINATES: profile:INFERNAL:1.1.4;locus_tag=EGO51_RS18185;product=16S ribosomal RNA
+NZ_RQWK01000003.1	cmsearch	rRNA	7162	10092	.	+	.	ID=rna-EGO51_RS18190;Parent=gene-EGO51_RS18190;Dbxref=RFAM:RF02540;gbkey=rRNA;inference=COORDINATES: profile:INFERNAL:1.1.4;locus_tag=EGO51_RS18190;product=23S ribosomal RNA
+NZ_RQWK01000003.1	cmsearch	rRNA	10229	10351	.	+	.	ID=rna-EGO51_RS18195;Parent=gene-EGO51_RS18195;Dbxref=RFAM:RF00001;gbkey=rRNA;gene=rrf;inference=COORDINATES: profile:INFERNAL:1.1.4;locus_tag=EGO51_RS18195;product=5S ribosomal RNA
+CP000159.1	Genbank	rRNA	3324764	3324873	.	-	.	ID=rna-SRU_2687;Parent=gene-SRU_2687;gbkey=rRNA;gene=rrfA;locus_tag=SRU_2687;product=5S ribosomal RNA
+CP000159.1	Genbank	rRNA	3325001	3327939	.	-	.	ID=rna-SRU_2688;Parent=gene-SRU_2688;gbkey=rRNA;gene=rrlA;locus_tag=SRU_2688;product=23S ribosomal RNA
+CP000159.1	Genbank	rRNA	3328508	3330049	.	-	.	ID=rna-SRU_2691;Parent=gene-SRU_2691;gbkey=rRNA;gene=rrsA;locus_tag=SRU_2691;product=16S ribosomal RNA
