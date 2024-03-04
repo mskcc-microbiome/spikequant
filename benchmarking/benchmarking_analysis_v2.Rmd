@@ -1,0 +1,143 @@
+---
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+library(tidyverse)
+library(patchwork)
+```
+
+
+# data preparation
+Due to rounding issues during the sequencing data simulation with ART, we aren't guaranteed an exact total of the targeted 20M reads per sample. The first step is to read in the data summary file to calculate the per-sample total depth.
+
+```{r}
+#if (!file.exists("benchmarking/data_summary.tsv")) system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/data_summary.tsv benchmarking/data_summary.tsv")
+#if (!file.exists("benchmarking/results/merged_benchmarking_coverage.tsv")) system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/results/merged_benchmarking_coverage.tsv benchmarking/results/merged_benchmarking_coverage.tsv"
+
+
+spikes <- c("Haloarcula_hispanica", "Salinibacter_ruber", "Trichoderma_reesei")
+spikes_pri <- paste0(spikes, "_primary") 
+spikes_pri_masked <- paste0(spikes, "_primary_masked") 
+# read in the data summary to get the actual totals 
+data_summary_most <- read.csv("benchmarking/data_summary.tsv", sep="\t") %>%
+  #filter(!grepl("spike0.00000", file)) %>% 
+  mutate(
+    true_count=as.numeric(gsub(",", "", num_seqs)),
+    sample=gsub(".*?_(\\d+_depth.*?_spike.*?)_.*", "\\1", file),
+    Genome = gsub(".*?_(\\d+_depth.*?_spike.*?)_(.*).fasta.*", "\\2", file),
+    is_spike =Genome %in% c(spikes, spikes_pri)
+  ) %>% 
+  group_by(sample,is_spike, Genome) %>% 
+  summarize(true_count = sum(true_count)) %>%
+  ungroup() %>%
+  group_by(sample) %>% 
+  mutate(total = sum(true_count)) %>%
+  ungroup() %>% 
+  filter( is_spike)%>% 
+  select(sample, Genome, true_count, total) %>% 
+  distinct()
+# parse the ones lacking any spikes so we still have totals
+# the left join with the dummy data makes the merging below more straightforward
+data_summary_nospike <- read.csv("benchmarking/data_summary.tsv", sep="\t") %>% 
+  filter(grepl("spike0.00000", file)) %>% 
+  mutate(
+    true_count=as.numeric(gsub(",", "", num_seqs)),
+    sample=gsub(".*?_(\\d+_depth.*?_spike.*?)_.*", "\\1", file),
+  ) %>% 
+ group_by(sample) %>% 
+  summarize(total = sum(true_count)) %>% ungroup() %>%
+  mutate(true_count=0) %>% 
+  left_join(data.frame(true_count=rep(0, length(spikes)), Genome=spikes), relationship= "many-to-many")
+
+data_summary <- bind_rows(data_summary_most,data_summary_nospike) %>% 
+  rename("genome_base" = "Genome")
+```
+
+
+Next, because we masked some regions of the genome for the rrna masked set, we need to determine the adjusted genome size by tallying how many bases from the overall length we lost in the process
+```{r}
+# filter only primary contigs, and rename assemblies
+rrna_depletion <- read.csv("benchmarking/spikes/rrna_masking.bed", sep="\t", header=FALSE, col.names = c("seq", "source", "feature", "start", "stop", "score", "strand",  "frame", "dets")) %>% 
+  mutate(Genome = case_when(
+    seq == "NZ_RQWK01000001.1" ~ "Haloarcula_hispanica_primary_masked",
+    seq == "CP000159.1" ~ "Salinibacter_ruber_primary_masked",
+    TRUE ~ "whocares"
+  )) %>% 
+  mutate(feature_len = stop-start) %>% 
+  filter(Genome %in% spikes_pri_masked) %>% 
+  group_by(Genome) %>% 
+  summarize(total_rrna_length = sum(feature_len))
+```
+
+
+
+```{r}
+tmp2 <- read.csv("benchmarking/v2/all_coverage.tsv", sep="\t")  %>% 
+  rename(rawsample=sample) %>%
+  mutate(
+    quantref=gsub(".*quanttype(.*)$", "\\1", rawsample),
+    sample=gsub("(.*?)_offtarget.*", "\\1", rawsample),
+    dbtype=gsub("(.*?)_offtarget(.*?)_.*", "\\2", rawsample),
+    aligner=gsub("(.*?)_mapper(.*?)_.*", "\\2", rawsample),
+    target=as.numeric(gsub(".*_spike(.*?)_.*", "\\1", rawsample)),
+    is_spike =Genome %in% c(spikes, spikes_pri, spikes_pri_masked)
+  ) %>%
+  mutate(genome_base = gsub("_primar.*", "", Genome )) %>% 
+  left_join(data_summary, by = c("sample", "genome_base")) %>% 
+  group_by(genome_base) %>% 
+  mutate(full_genome = max(Length)) %>% 
+  ungroup() %>% 
+  left_join(rrna_depletion) %>% 
+  mutate(adjusted_length = ifelse(is.na(total_rrna_length), Length, Length-total_rrna_length)) %>%
+  mutate(counts = (Read_Count * (full_genome/100000))/(adjusted_length/100000)) %>% 
+  select(sample, dbtype, quantref, aligner, is_spike, target, Genome, Length, genome_base, full_genome, Read_Count, counts, true_count, total,adjusted_length) %>% 
+  mutate(count_deviation_percent = (counts-true_count)/(true_count)) %>% 
+  mutate(count_percent = true_count/counts)
+
+if (interactive()){
+View(tmp2 %>% filter(is_spike) %>% filter(grepl("1_depth10000000_spike0.00000", sample), aligner == "bwa-mem", dbtype=="bins"))
+View(tmp2 %>% filter(is_spike) %>% filter(grepl("1_depth10000000_spike0.10000", sample), aligner == "bwa-mem", dbtype=="bins"))
+}
+ggplot(tmp2 %>% filter(is_spike) %>%
+         group_by(target, aligner) %>%
+         filter(!grepl("_masked", Genome)) %>% 
+         mutate(xint = ifelse(row_number() == 1, true_count, NA)), aes(y=dbtype, x=counts, color=Genome)) +
+  geom_vline(aes(xintercept = xint), color = "black", linetype = "dotted") + 
+  geom_jitter(width=0) + 
+  facet_grid( aligner ~  target, scales="free") + 
+  theme(axis.text.x = element_text(angle=45, hjust=1),plot.caption = element_text(hjust = 0)
+        ) + 
+  scale_color_brewer(palette = "Paired")  +
+  labs(caption="Dotted line indicate the targeted* of spike reads; x facet indicates the total spiked percentage of datase",
+       subtitle="Version 2: more stringent alignment filtering")
+
+triple_pal <- c("#A6CEE3", "#1F78B4", "#47AFF4", "#B2DF8A", "#33A02C",  "#71C88A", "#FB9A99",  "#E31A1C","#FB7163")
+ggplot(tmp2 %>% filter(is_spike) %>%
+         group_by(target, aligner, genome_base) %>%
+         mutate(xint = ifelse(row_number() == 1, true_count, NA)), aes(y=dbtype, x=counts, color=Genome)) +
+  geom_vline(aes(xintercept = xint), color = "black", linetype = "dotted") + 
+  geom_boxplot(outlier.colour = NA) + 
+  geom_jitter(width=0, size =.1) + 
+  facet_grid( aligner+genome_base ~  target, scales="free") + 
+  theme(axis.text.x = element_text(angle=45, hjust=1),plot.caption = element_text(hjust = 0)
+        ) + 
+  scale_color_manual(values=triple_pal)  +
+  labs(caption="Dotted line indicate the targeted* of spike reads; x facet indicates the total spiked percentage of datase",
+       subtitle="Version 2: more stringent alignment filtering")
+
+
+
+ggplot(tmp2 %>% filter(is_spike) %>% 
+         filter(!is.infinite(count_percent)), aes(y=dbtype, x=count_percent, color=Genome)) +
+  geom_jitter(width=0) + 
+  facet_grid( aligner ~  target, scales="free") + 
+  theme(axis.text.x = element_text(angle=45, hjust=1)) + scale_color_brewer(palette = "Paired")  
+
+ggplot(tmp2 %>% filter(is_spike) %>% filter(target > 0), aes(y=target, x=counts_perc, color=dbtype)) +
+  geom_jitter(width=0) + 
+  facet_grid(~ genome_base, scales="free", space = "free") + 
+  theme(axis.text.x = element_text(angle=45, hjust=1)) 
+
+```

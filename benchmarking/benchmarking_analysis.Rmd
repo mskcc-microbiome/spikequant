@@ -6,6 +6,7 @@ editor_options:
 ```{r}
 library(tidyverse)
 library(patchwork)
+theme_set(theme_bw())
 ```
 
 
@@ -73,7 +74,7 @@ tmp <- read.csv("benchmarking/results/merged_benchmarking_coverage.tsv", sep="\t
   mutate(counts = (Read_Count * (full_genome/100000))/(Length/100000)) %>% 
   select(sample, dbtype, quantref, aligner, is_spike, target, Genome, Length, genome_base, full_genome, Read_Count, counts, true_count, total) %>% 
   mutate(count_deviation_percent = (counts-true_count)/(true_count)) %>% 
-  mutate(count_percent = counts/true_count)
+  mutate(count_percent = true_count/counts)
 
 if (interactive()){
 View(tmp %>% filter(is_spike) %>% filter(grepl("1_depth10000000_spike0.00000", sample), aligner == "bwa-mem", dbtype=="bins"))
@@ -91,11 +92,22 @@ View(tmp %>% filter(is_spike) %>% filter(grepl("1_depth10000000_spike0.10000", s
 #   #scale_x_log10(limits = c(0.00001, 1)) + 
 #   theme(axis.text.x = element_text(angle=45, hjust=1))
 
+ggplot(tmp %>% filter(is_spike) %>%
+         group_by(aligner, target) %>%
+         mutate(xint = ifelse(row_number() == 1, true_count, NA)), aes(y=dbtype, x=counts, color=Genome)) +
+  geom_vline(aes(xintercept = xint), color = "black", linetype = "dotted") + 
+  geom_jitter(width=0) + 
+  facet_grid( aligner ~  target, scales="free") + 
+  theme(axis.text.x = element_text(angle=45, hjust=1),plot.caption = element_text(hjust = 0)
+        ) + 
+  scale_color_brewer(palette = "Paired")  +
+  labs(caption="Dotted line indicate the targeted* of spike reads; x facet indicates the total spiked percentage of datase")
+
 
 ggplot(tmp %>% filter(is_spike) %>% 
          filter(!is.infinite(count_percent)), aes(y=dbtype, x=count_percent, color=Genome)) +
   geom_jitter(width=0) + 
-  facet_grid( aligner ~  ., scales="free", space = "free") + 
+  facet_grid( aligner ~  target, scales="free") + 
   theme(axis.text.x = element_text(angle=45, hjust=1)) + scale_color_brewer(palette = "Paired")  
 
 ggplot(tmp %>% filter(is_spike) %>% filter(target > 0), aes(y=target, x=counts_perc, color=dbtype)) +
