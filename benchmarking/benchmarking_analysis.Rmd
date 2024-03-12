@@ -92,7 +92,7 @@ View(tmp %>% filter(is_spike) %>% filter(grepl("1_depth10000000_spike0.10000", s
 #   #scale_x_log10(limits = c(0.00001, 1)) + 
 #   theme(axis.text.x = element_text(angle=45, hjust=1))
 
-ggplot(tmp %>% filter(is_spike) %>%
+(old <- ggplot(tmp %>% filter(is_spike) %>%
          group_by(aligner, target) %>%
          mutate(xint = ifelse(row_number() == 1, true_count, NA)), aes(y=dbtype, x=counts, color=Genome)) +
   geom_vline(aes(xintercept = xint), color = "black", linetype = "dotted") + 
@@ -102,7 +102,7 @@ ggplot(tmp %>% filter(is_spike) %>%
         ) + 
   scale_color_brewer(palette = "Paired")  +
   labs(caption="Dotted line indicate the targeted* of spike reads; x facet indicates the total spiked percentage of datase")
-
+)
 
 ggplot(tmp %>% filter(is_spike) %>% 
          filter(!is.infinite(count_percent)), aes(y=dbtype, x=count_percent, color=Genome)) +

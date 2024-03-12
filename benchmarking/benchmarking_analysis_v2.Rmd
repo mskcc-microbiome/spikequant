@@ -100,7 +100,7 @@ if (interactive()){
 View(tmp2 %>% filter(is_spike) %>% filter(grepl("1_depth10000000_spike0.00000", sample), aligner == "bwa-mem", dbtype=="bins"))
 View(tmp2 %>% filter(is_spike) %>% filter(grepl("1_depth10000000_spike0.10000", sample), aligner == "bwa-mem", dbtype=="bins"))
 }
-ggplot(tmp2 %>% filter(is_spike) %>%
+(new <-ggplot(tmp2 %>% filter(is_spike) %>%
          group_by(target, aligner) %>%
          filter(!grepl("_masked", Genome)) %>% 
          mutate(xint = ifelse(row_number() == 1, true_count, NA)), aes(y=dbtype, x=counts, color=Genome)) +
@@ -112,12 +112,32 @@ ggplot(tmp2 %>% filter(is_spike) %>%
   scale_color_brewer(palette = "Paired")  +
   labs(caption="Dotted line indicate the targeted* of spike reads; x facet indicates the total spiked percentage of datase",
        subtitle="Version 2: more stringent alignment filtering")
+)
 
+if (FALSE) ggsave("old_v_new.pdf", width = 24, height=12, old+new+ plot_layout(ncol=2, guides = "collect"))
 triple_pal <- c("#A6CEE3", "#1F78B4", "#47AFF4", "#B2DF8A", "#33A02C",  "#71C88A", "#FB9A99",  "#E31A1C","#FB7163")
 ggplot(tmp2 %>% filter(is_spike) %>%
          group_by(target, aligner, genome_base) %>%
          mutate(xint = ifelse(row_number() == 1, true_count, NA)), aes(y=dbtype, x=counts, color=Genome)) +
   geom_vline(aes(xintercept = xint), color = "black", linetype = "dotted") + 
+  geom_boxplot(outlier.colour = NA) + 
+  geom_jitter(width=0, size =.1) + 
+  facet_grid( aligner+genome_base ~  target, scales="free") + 
+  theme(axis.text.x = element_text(angle=45, hjust=1),plot.caption = element_text(hjust = 0)
+        ) + 
+  scale_color_manual(values=triple_pal)  +
+  labs(caption="Dotted line indicate the targeted* of spike reads; x facet indicates the total spiked percentage of datase",
+       subtitle="Version 2: more stringent alignment filtering")
+
+
+
+ggplot(tmp2 %>% filter(is_spike) %>%
+         filter(target != 0) %>%  
+         filter(Genome != "Trichoderma_reesei_primary") %>% 
+         group_by(target, aligner, genome_base) %>%
+         mutate(xint = ifelse(row_number() == 1, true_count, NA)), 
+       aes(y=dbtype, x=counts/true_count * 100, color=Genome)) +
+  geom_vline(xintercept = 100, color = "black", linetype = "dotted") + 
   geom_boxplot(outlier.colour = NA) + 
   geom_jitter(width=0, size =.1) + 
   facet_grid( aligner+genome_base ~  target, scales="free") + 
