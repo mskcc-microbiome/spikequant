@@ -30,23 +30,19 @@ unzip D6331.refseq.zip
 bash benchmarking/scripts/get_spikes.sh benchmarkingspikes/raw/
 ```
 
-### Primary/Other Split Spikes
-Given that some spikes might contain sub-par contigs or may contain multi-copy plasmids, we also split the spikes into two files: the primary sequence, and all other sequences
+### BED files for primary, no-rRNA, and marker quantification
 ```
-for f in benchmarking/spikes/raw/*.fa
-do
-	python benchmarking/scripts/split_primary_other.py $f benchmarking/spikes/split/
-done
-
+bash benchmarking/scripts/write_bed_files.sh benchmarking/beds/
 ```
 
-### rRNA Masked Spikes
-Bedtools is needed for this script; It masks the rRNA from the references in benchmarking/spikes/split/.
 
-```
-bash benchmarking/scripts/get_spikes_and_mask_rRNAs.sh benchmarking/spikes/rrnamasked/
+<!-- ### rRNA Masked Spikes -->
+<!-- Bedtools is needed for this script; It masks the rRNA from the references in benchmarking/spikes/split/. -->
 
-```
+<!-- ``` -->
+<!-- bash benchmarking/scripts/get_spikes_and_mask_rRNAs.sh benchmarking/spikes/rrnamasked/ -->
+
+<!-- ``` -->
 
 
 ### Metaphlan Marker Masked Spikes
@@ -98,4 +94,10 @@ Haloarcula_hispanica,yes,$PWD/benchmarking/spikes/split/Haloarcula_hispanica_pri
 
 ```
 snakemake --snakefile benchmarking/run.smk --directory $PWD/benchmarking/v2/ --config benchmarkdata=$PWD/benchmarking/data/ spike_manifests=[$PWD/benchmarking/manifests/raw.csv,$PWD/benchmarking/manifests/rrnamasked.csv,$PWD/benchmarking/manifests/split.csv] testdata_config=$PWD/benchmarking/benchmarking_sim_data_config.yaml zymo_genomes=$PWD/D6331.refseq/genomes/
+```
+
+## TMP: aggregating the results
+```
+
+ls benchmarking/v3/*/coverm/*.tsv | grep -v "mqc" | grep "Salini\|Haloa" | while read i; do bname=$(basename $i) ; cat $i | sed "s|^|$bname\t|g"; done > benchmarking/v3_res.tsv
 ```

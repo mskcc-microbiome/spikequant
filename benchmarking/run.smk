@@ -2,7 +2,7 @@ import os
 import json
 import yaml
 import shutil
-
+import glob
 from pathlib import Path
 from snakemake.utils import validate
 from io import StringIO
@@ -10,7 +10,7 @@ import pandas as  pd
 
 mappers = ["minimap2-sr", "bwa-mem"]
 zymo = config["zymo_genomes"]
-
+beds = {os.path.basename(x).replace(".bed", ""): os.path.join(str(workflow.current_basedir),"../",  x) for x in glob.glob(os.path.join(workflow.current_basedir, "beds/*.bed"))}
 # make this a dict for easier lookup
 spike_manifests = {os.path.splitext(os.path.basename(x))[0]: x for x in config["spike_manifests"]}
 
@@ -76,7 +76,8 @@ wildcard_constraints:
 rule all:
     input:
         expand("{sample}/coverm/{sample}.coverage_mqc.tsv", sample=samples),
-        f"all_coverage.tsv"
+        f"all_coverage.tsv",
+        expand("{sample}/coverm/{sample}_{bed}.tsv", bed=beds, sample=samples)
 
 def get_sample_base(sample):
     """ sample_base is the part of the sample name relevant to data generation,
@@ -111,7 +112,8 @@ rule run_benchmarking_pipeline:
         R2s=lambda wildcards: df.loc[get_sample_base(wildcards.sample), "R2s"].split(","),
         spiketable=get_spiketable_from_sample,
     output:
-        coverm="{sample}/coverm/{sample}.coverage_mqc.tsv"
+        coverm="{sample}/coverm/{sample}.coverage_mqc.tsv",
+        bam="{sample}/coverm/{sample}_bams/{sample}.bam",
     params:
 #        offtarget=lambda wc: get_offtarget_from_sample(wc),
         target = lambda wc, output: os.path.join("coverm", os.path.basename(output.coverm)),
@@ -125,6 +127,54 @@ rule run_benchmarking_pipeline:
     snakemake --snakefile {params.workflow_dir}/../workflow/Snakefile --directory {wildcards.sample}/ --config R1=[{input.R1s}] \
     R2=[{input.R2s}] offtarget={params.offtarget} spiketable={input.spiketable} -f {params.target} \
     --rerun-incomplete
+    """
+
+
+rule index_and_clean:
+    input:
+        bam="{sample}/coverm/{sample}_bams/{sample}.bam",
+    output:
+        bam="{sample}/coverm/{sample}_bams/{sample}_clean.bam",
+        bai="{sample}/coverm/{sample}_bams/{sample}_clean.bam.bai",
+    container: "docker://ghcr.io/vdblab/bowtie2:2.5.0"
+    shell: """
+    # clean up bed names by extracting the appropriate header from alignment header,
+    #removing the junk, and using those names to reheader the bam
+    # that bam gets indexed and used for coverage calculation
+    samtools view -H {input.bam} |\
+    sed -e 's/SN:Haloarcula_hispanica.*~/SN:/' | \
+    sed -e 's/SN:Salinibacter.*~/SN:/' | samtools reheader - {input.bam} > {output.bam}.tmp
+    # 3852 negated should keep all aligned, properly paired, primary alignments
+    # rname == rnext should keep only concordant pairs
+    # "(qlen/rlen) >= .97" should rtain only alignments where there was greater than 97% overlap
+    samtools view -bh -F 3852   {output.bam}.tmp | samtools view -bh -e "rname == rnext" | samtools view -bh -e "(qlen/rlen) >= .97" > {output.bam}
+    # now, we need to filter to mimic what coverm was doing: retaining only properly aligned pairs,
+    samtools index  {output.bam}
+    """
+
+
+
+
+def get_bed_from_wc(wildcards):
+    target_bed = beds[wildcards.bed]
+    return target_bed
+
+
+rule run_bed_based_coverage_calculations:
+    input:
+        bam="{sample}/coverm/{sample}_bams/{sample}_clean.bam",
+        bai="{sample}/coverm/{sample}_bams/{sample}_clean.bam.bai",
+        bed=get_bed_from_wc,
+    output:
+        tsv="{sample}/coverm/{sample}_{bed}.tsv",
+        cov="{sample}/coverm/{sample}_{bed}.cov",
+    container: "docker://ghcr.io/vdblab/bowtie2:2.5.0"
+    shell: """
+    # get total bed length
+    bedlen=$(awk -F'\t' 'BEGIN{{SUM=0}}{{SUM+=$3-$2 }}END{{print SUM}}' {input.bed})
+    bedtools multicov -bams {input.bam}  -bed {input.bed}  > {output.cov}
+    reads_in_regions=$(awk '{{s+=$4}} END {{print s}}' {output.cov})
+    echo -e "{wildcards.bed}\t${{bedlen}}\t${{reads_in_regions}}" > {output.tsv}
     """
 
 

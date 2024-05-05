@@ -227,7 +227,7 @@ rule coverm:
         bindir="{sample}_clean",
     output:
         mqc='coverm/{sample}.coverage_mqc.tsv',
-        bam=os.path.join('coverm/{sample}_bams/', 'coverm-genome.' + os.path.basename(config["R1"][0]) + ".bam"),
+        bam=os.path.join('coverm/{sample}_bams/{sample}.bam'),
     params:
         fastq_string = lambda wc, input: " ".join([config["R1"][x] + " " + config["R2"][x] for x in range(0, len(config["R1"]))]),
         mapper=mapper,
@@ -254,6 +254,10 @@ rule coverm:
         echo -e "# plot_type: 'table'\n# section_name: 'Bin Coverage Statistics'" > {output.mqc}
         cat {output.mqc}.tmp >> {output.mqc}
         rm {output.mqc}.tmp
+        # rename the goofy alignment filename
+        find coverm/
+        mv   $(dirname  {output.bam})/*.bam {output.bam}
+
         """
 
 
