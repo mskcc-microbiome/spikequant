@@ -249,7 +249,7 @@ rule coverm:
           --output-file {output.mqc}.tmp --threads {threads} \
           {params.coverm_params} \
           --bam-file-cache-directory {params.bamdir} \
-          --min-covered-fraction 0 \
+          --min-covered-fraction 0 --verbose\
           --genome-fasta-extension fa
         ls {params.bamdir}
         # add in the Multiqc header info
