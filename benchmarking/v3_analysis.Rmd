@@ -1,3 +1,10 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+```{r}
+
 library(tidyverse)
 library(patchwork)
 theme_set(theme_bw())
@@ -39,8 +46,7 @@ data_summary_nospike <- read.csv("benchmarking/data_summary.tsv", sep="\t") %>%
 data_summary <- bind_rows(data_summary_most,data_summary_nospike) %>% 
   rename("genome_base" = "Genome")
 
-#system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/v3_res.tsv ./")
-res = read.csv("v3_res.tsv" , sep="\t", header=FALSE, col.names = c("rawsample", "spike", "len", "nreads") )%>% 
+res = read.csv("v3/v3_results.tsv" , sep="\t", header=FALSE, col.names = c("rawsample", "spike", "len", "nreads") )%>% 
   filter(grepl("bwa-mem", rawsample)) %>% 
   filter(!grepl("Trich", rawsample)) %>% 
     mutate(
@@ -132,4 +138,4 @@ res %>%
        title="Version3: filtered alignments")
 
 
-  
+```
