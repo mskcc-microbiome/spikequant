@@ -231,7 +231,9 @@ rule coverm:
     params:
         fastq_string = lambda wc, input: " ".join([config["R1"][x] + " " + config["R2"][x] for x in range(0, len(config["R1"]))]),
         mapper=mapper,
-        coverm_params = "--min-read-percent-identity .97 --min-read-aligned-percent .97 --proper-pairs-only --exclude-supplementary"
+        coverm_params = "--min-read-percent-identity .97 --min-read-aligned-percent .97 --proper-pairs-only --exclude-supplementary",
+        bamdir = lambda wc: f"coverm/{wc.sample}_bams/",
+        bam = lambda wc: f"coverm/{wc.sample}_bams/coverm-genome.{wc.sample.split('_off')[0]}_R1.fastq.gz.bam"
     resources:
         runtime=4*60
     container:
@@ -246,17 +248,17 @@ rule coverm:
             covered_bases variance length count reads_per_base rpkm tpm \
           --output-file {output.mqc}.tmp --threads {threads} \
           {params.coverm_params} \
-          --bam-file-cache-directory $(dirname  {output.bam}) \
+          --bam-file-cache-directory {params.bamdir} \
           --min-covered-fraction 0 \
           --genome-fasta-extension fa
-        ls $(dirname  {output.bam})
+        ls {params.bamdir}
         # add in the Multiqc header info
         echo -e "# plot_type: 'table'\n# section_name: 'Bin Coverage Statistics'" > {output.mqc}
         cat {output.mqc}.tmp >> {output.mqc}
         rm {output.mqc}.tmp
         # rename the goofy alignment filename
         find coverm/
-        mv   $(dirname  {output.bam})/*.bam {output.bam}
+        mv -v  {params.bam} {output.bam}
 
         """
 

@@ -146,8 +146,9 @@ rule index_and_clean:
     sed -e 's/SN:Salinibacter.*~/SN:/' | samtools reheader - {input.bam} > {output.bam}.tmp
     # 3852 negated should keep all aligned, properly paired, primary alignments
     # rname == rnext should keep only concordant pairs
-    # "(qlen/rlen) >= .97" should rtain only alignments where there was greater than 97% overlap
-    samtools view -bh -F 3852   {output.bam}.tmp | samtools view -bh -e "rname == rnext" | samtools view -bh -e "(qlen/rlen) >= .97" > {output.bam}
+    # "(qlen/rlen) >= .97" should retain only alignments where there was greater than 97% overlap
+    #  -e '[NM]/rlen > .03' should retain only alignments where there was greater than 97% idenity
+    samtools view -bh -F 3852   {output.bam}.tmp | samtools view -bh -e "rname == rnext" | samtools view -bh -e "(qlen/rlen) >= .97 && ([NM]/rlen <= .03)" > {output.bam}
     # now, we need to filter to mimic what coverm was doing: retaining only properly aligned pairs,
     samtools index  {output.bam}
     """
