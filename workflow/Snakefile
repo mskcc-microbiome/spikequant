@@ -13,7 +13,6 @@ configfile: os.path.join(str(workflow.current_basedir), "../config/config.yaml")
 
 #include: "common.smk"
 
-
 # ToDo change this to schema validation
 assert "spiketable" in config.keys(), "spiketable is a required config argument!"
 
@@ -46,6 +45,7 @@ for i in SPIKEDF.path.tolist():
 #df["sample"] = manif_base
 #df = df.set_index("sample")
 
+config["spike_names"] = set(SPIKEDF.name.tolist())
 
 envvars:
     "TMPDIR",
@@ -77,7 +77,6 @@ rule all:
         f'{config["sample"]}.stats',
 
 def get_spike_abs_paths(wildcards):
-#    return [os.path.join(os.path.dirname(config["spiketable"]), p) for p in SPIKEDF.path.tolist()]
     return SPIKEDF.path.tolist()
 
 rule copy_spikes_and_offtarget:
@@ -122,19 +121,24 @@ rule ani_filter:
     """ 95 based on https://www.nature.com/articles/s41467-018-07641-9
     """
     input:
+        spiketable=config["spiketable"],
         csv="{sample}_ani_results.tsv",
         bindir="{sample}_with_spikes_raw",
         manifest="{sample}_manifest.txt",
     output:
         pairs_for_vis="{sample}_close_ani.tsv",
-        bindir=temp(directory("{sample}_clean")),
+        ref="{sample}_reference.fa",
     params:
-        spike_names = set(SPIKEDF.name.tolist()),
+#        spike_names = config["spike_names"],
         ani_thresh = 95
     run:
         import os
         import sys
         import shutil
+        # have to do this here, rather than the main workflow and passing params.
+        # otherwise, passing the entries as params kept being considered a param change
+        # which would trigger rerunning.
+        spike_names = pd.read_csv(config["spiketable"], sep=",", names=['name', "path","bedpath"], header=None).name.tolist()
 
         contigs_to_ignore = []
         # could use pandas, but this is pretty straightforward
@@ -161,13 +165,21 @@ rule ani_filter:
                         else:
                             bin_index = 0
                         contigs_to_ignore.append([query, reference][bin_index])
-        os.makedirs(output.bindir)
-        with open(input.manifest, "r") as inf:
+#        os.makedirs(output.bindir)
+        with open(input.manifest, "r") as inf, open(output.ref, "w") as outf:
             for line in inf:
                 if line.strip() not in contigs_to_ignore:
-                    dest =  os.path.join(output.bindir, os.path.basename(line.strip()))
-                    if not os.path.exists(dest):
-                        shutil.copyfile(line.strip(), dest)
+                    with open(line.strip(), "r") as fasta:
+                        for faline in fasta:
+                            if faline.startswith(">"):
+                                header = faline.replace(">", "")
+                                id = faline.split()[0]
+                                genome_name = line.strip().replace(".fa", "---")
+                                faline = f">{genome_name}{id}"
+                            outf.write(faline)
+                    #dest =  os.path.join(output.bindir, os.path.basename(line.strip()))
+                    #if not os.path.exists(dest):
+                    #    shutil.copyfile(line.strip(), dest)
                 else:
                     print(f"Excluding {line.strip()}")
         print("done")
@@ -200,20 +212,19 @@ rule ani_vis:
 
     """
 
-rule make_spike_reference:
-    input:
-        bindir="{sample}_clean",
-    output:
-        ref="{sample}_reference.fa",
-    shell:"""
-    for i in  {input.bindir}/*.fa
-    do
-    bname=$(basename $i)
-    bname=$(echo $bname | sed "s|.fa||g")
-    echo $bname
-    cat $i | sed "s|>|>${{bname}}---|g" >> {output.ref}
-    done
-    """
+# rule make_spike_reference:
+#     input:
+#         bindir="{sample}_clean",
+#     output:
+#     shell:"""
+#     for i in  {input.bindir}/*.fa
+#     do
+#     bname=$(basename $i)
+#     bname=$(echo $bname | sed "s|.fa||g")
+#     echo $bname
+#     cat $i | sed "s|>|>${{bname}}---|g" >> {output.ref}
+#     done
+#     """
 
 if config["mapper"] == "bwa-mem":
     rule bwa_mem_index:
@@ -261,7 +272,7 @@ elif config["mapper"] == "bowtie2":
             dbbase="{sample}_reference.fa",
         output:
             bam=os.path.join('{sample}_bams/{sample}.bam'),
-        container:"staphb/bowtie2:2.5.3"
+        container:"docker://staphb/bowtie2:2.5.3"
         threads: 32
         shell:"""
         bowtie2-build --threads {threads} {input.dbbase}
@@ -298,7 +309,7 @@ rule index_and_clean:
     # clean up bed names by extracting the appropriate header from alignment header,
     # removing the junk, and using those names to reheader the bam
     # that bam gets indexed and used for coverage calculation
-    samtools sort -@{threads} -o {input.sam}.bam
+    samtools sort -@{threads} -o {input.sam}.bam {input.sam}
     samtools view -H {input.sam}.bam |\
     sed -e 's/SN:Haloarcula_hispanica.*---/SN:/' | \
     sed -e 's/SN:Salinibacter.*---/SN:/' | samtools reheader - {input.sam}.bam > {output.bam}.tmp

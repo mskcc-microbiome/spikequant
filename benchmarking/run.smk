@@ -8,17 +8,12 @@ from snakemake.utils import validate
 from io import StringIO
 import pandas as  pd
 
-mappers = ["minimap2-sr", "bwa-mem"]
+mappers = ["minimap2-sr", "bwa-mem", "bowtie2"]
 zymo = config["zymo_genomes"]
-beds = {os.path.basename(x).replace(".bed", ""): os.path.join(str(workflow.current_basedir),"../",  x) for x in glob.glob(os.path.join(workflow.current_basedir, "beds/*.bed"))}
+#beds = {os.path.basename(x).replace(".bed", ""): os.path.join(str(workflow.current_basedir),"../",  x) for x in glob.glob(os.path.join(workflow.current_basedir, "beds/*.bed"))}
 # make this a dict for easier lookup
 spike_manifests = {os.path.splitext(os.path.basename(x))[0]: x for x in config["spike_manifests"]}
 
-#    "raw": "/data/brinkvd/users/watersn/spikequant/benchmarking/manifests/raw.csv",
-#    "rrnamasked": "/data/brinkvd/users/watersn/spikequant/benchmarking/manifests/rrnamasked.csv",
-#    "split": "/data/brinkvd/users/watersn/spikequant/benchmarking/manifests/split.csv"
-#}
-#dbtypes = [f"{x}-{y}" for x in ["spike", "assembly", "bins", "mock"] for y in quanttype]
 
 # read in the config actually used to create the test data
 with open(config["testdata_config"], "r") as inf:
@@ -31,6 +26,12 @@ manif_base = expand("{rep}_depth10000000_spike{perc}",
                     rep=testdata_config["reps"],
                     depth=testdata_config["total_depths"],
                     perc=testdata_config["total_spike_fractions"])
+
+sample_bases = expand("{manif_base}_offtarget{offtarget}_mapper{mapper}",
+                 manif_base = manif_base,
+                 offtarget = ["none", "zymo", "bins", "assembly"],
+                 mapper=mappers)
+
 samples = expand("{manif_base}_offtarget{offtarget}_mapper{mapper}_quanttype{quanttype}",
                  manif_base = manif_base,
                  offtarget = ["none", "zymo", "bins", "assembly"],
@@ -130,61 +131,6 @@ rule run_benchmarking_pipeline:
     """
 
 
-rule index_and_clean:
-    input:
-        bam="{sample}/coverm/{sample}_bams/{sample}.bam",
-    output:
-        bam="{sample}/coverm/{sample}_bams/{sample}_clean.bam",
-        bai="{sample}/coverm/{sample}_bams/{sample}_clean.bam.bai",
-    container: "docker://ghcr.io/vdblab/bowtie2:2.5.0"
-    shell: """
-    # clean up bed names by extracting the appropriate header from alignment header,
-    #removing the junk, and using those names to reheader the bam
-    # that bam gets indexed and used for coverage calculation
-    samtools view -H {input.bam} |\
-    sed -e 's/SN:Haloarcula_hispanica.*~/SN:/' | \
-    sed -e 's/SN:Salinibacter.*~/SN:/' | samtools reheader - {input.bam} > {output.bam}.tmp
-    # 3852 negated should keep all aligned, properly paired, primary alignments
-    # rname == rnext should keep only concordant pairs
-    # "(rlen(length(seq)) >= .97" should retain only alignments where there was greater than 97% overlap
-    #  -e '[NM]/rlen <= .03' should retain only alignments where there was greater than 97% idenity
-    samtools view -bh -F 3852   {output.bam}.tmp | samtools view -bh -e "rname == rnext" | samtools view -bh -e "((rlen/length(seq)) >= .97) && ([NM]/rlen <= .03)" > {output.bam}
-    # now, we need to filter to mimic what coverm was doing: retaining only properly aligned pairs,
-    samtools index  {output.bam}
-    """
-
-
-
-
-def get_bed_from_wc(wildcards):
-    target_bed = beds[wildcards.bed]
-    return target_bed
-
-
-rule run_bed_based_coverage_calculations:
-    input:
-        bam="{sample}/coverm/{sample}_bams/{sample}_clean.bam",
-        bai="{sample}/coverm/{sample}_bams/{sample}_clean.bam.bai",
-        bed=get_bed_from_wc,
-    output:
-        tsv="{sample}/coverm/{sample}_{bed}.tsv",
-        cov="{sample}/coverm/{sample}_{bed}.cov",
-    container: "docker://ghcr.io/vdblab/bowtie2:2.5.0"
-    shell: """
-    # get total bed length
-    bedlen=$(awk -F'\t' 'BEGIN{{SUM=0}}{{SUM+=$3-$2 }}END{{print SUM}}' {input.bed})
-    # subset bam to regions in the bed file.  The -f argument is much more
-    # usable here rather than in multicov, because it is relative to the bam here.
-    # we want to filter based on how much of the read overlaps the region, rather than
-# the other way around; this is because the regions have variable length, and this
-# argument is a fraction of the length not an integer of overlapping bases
-    bedtools intersect -a {input.bam}  -b {input.bed} -f .5    > {output.cov}.tmp.bam
-    samtools index {output.cov}.tmp.bam
-    bedtools multicov -bams {output.cov}.tmp.bam  -bed {input.bed}   > {output.cov}
-    reads_in_regions=$(awk '{{s+=$4}} END {{print s}}' {output.cov})
-    echo -e "{wildcards.bed}\t${{bedlen}}\t${{reads_in_regions}}" > {output.tsv}
-    rm  {output.cov}.tmp.bam
-    """
 
 
 rule tabulate:
