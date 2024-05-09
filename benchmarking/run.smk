@@ -173,9 +173,17 @@ rule run_bed_based_coverage_calculations:
     shell: """
     # get total bed length
     bedlen=$(awk -F'\t' 'BEGIN{{SUM=0}}{{SUM+=$3-$2 }}END{{print SUM}}' {input.bed})
-    bedtools multicov -bams {input.bam}  -bed {input.bed}  > {output.cov}
+    # subset bam to regions in the bed file.  The -f argument is much more
+    # usable here rather than in multicov, because it is relative to the bam here.
+    # we want to filter based on how much of the read overlaps the region, rather than
+# the other way around; this is because the regions have variable length, and this
+# argument is a fraction of the length not an integer of overlapping bases
+    bedtools intersect -a {input.bam}  -b {input.bed} -f .5    > {output.cov}.tmp.bam
+    samtools index {output.cov}.tmp.bam
+    bedtools multicov -bams {output.cov}.tmp.bam  -bed {input.bed}   > {output.cov}
     reads_in_regions=$(awk '{{s+=$4}} END {{print s}}' {output.cov})
     echo -e "{wildcards.bed}\t${{bedlen}}\t${{reads_in_regions}}" > {output.tsv}
+    rm  {output.cov}.tmp.bam
     """
 
 
