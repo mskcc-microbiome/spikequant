@@ -19,6 +19,7 @@ spike_manifests = {os.path.splitext(os.path.basename(x))[0]: x for x in config["
 with open(config["testdata_config"], "r") as inf:
     testdata_config = yaml.safe_load(inf)
     testdata_config["total_spike_fractions"] =  [f"{frac:.5f}" for frac in testdata_config["total_spike_fractions"]]
+    #testdata_config["total_spike_fractions"] =  [f"{frac:.5f}" for frac in [testdata_config["total_spike_fractions"][0]]]
 
 
 #manif_base = [f"{rep}_depth10000000_spike{perc}" for rep in range(1,6) for perc in testdata_config["total_spike_fractions]["0.00000", "0.00001", "0.00010", "0.00100", "0.01000", "0.10000", "1.00000"]]
@@ -71,14 +72,12 @@ profile = os.getenv("SNAKEMAKE_PROFILE")
 wildcard_constraints:
     quanttype="|".join(spike_manifests.keys()),
     offtarget="none|zymo|bins|assembly",
-    mapper="minimap2-sr|bwa-mem",
+    mapper="minimap2-sr|bwa-mem|bowtie2",
 
 
 rule all:
     input:
-        expand("{sample}/coverm/{sample}.coverage_mqc.tsv", sample=samples),
         f"all_coverage.tsv",
-        expand("{sample}/coverm/{sample}_{bed}.tsv", bed=beds, sample=samples)
 
 def get_sample_base(sample):
     """ sample_base is the part of the sample name relevant to data generation,
@@ -104,6 +103,9 @@ def get_spiketable_from_sample(wildcards):
     qtype=wildcards.sample.split("quanttype")[1].split("_")[0]
     return(spike_manifests[qtype])
 
+def get_mapper_from_sample(wildcards):
+     return wildcards.sample.split("mapper")[1].split("_")[0]
+
 rule run_benchmarking_pipeline:
     # same as in main pipeline, the offtarget is given as a param so it can be
     # optional when specified as "none"
@@ -113,37 +115,32 @@ rule run_benchmarking_pipeline:
         R2s=lambda wildcards: df.loc[get_sample_base(wildcards.sample), "R2s"].split(","),
         spiketable=get_spiketable_from_sample,
     output:
-        coverm="{sample}/coverm/{sample}.coverage_mqc.tsv",
-        bam="{sample}/coverm/{sample}_bams/{sample}.bam",
+        counts="{sample}/{sample}.spike_reads.tsv",
     params:
-#        offtarget=lambda wc: get_offtarget_from_sample(wc),
-        target = lambda wc, output: os.path.join("coverm", os.path.basename(output.coverm)),
         offtarget=get_offtarget_from_sample,
         profile=profile,
+        mapper=get_mapper_from_sample,
         workflow_dir=workflow.current_basedir,
     resources:
         walltime=5*60
     shell:"""
     export SNAKEMAKE_PROFILE={params.profile}
     snakemake --snakefile {params.workflow_dir}/../workflow/Snakefile --directory {wildcards.sample}/ --config R1=[{input.R1s}] \
-    R2=[{input.R2s}] offtarget={params.offtarget} spiketable={input.spiketable} -f {params.target} \
+    R2=[{input.R2s}] offtarget={params.offtarget} mapper={params.mapper} spiketable={input.spiketable} sample={wildcards.sample} \
     --rerun-incomplete
     """
 
-
-
-
 rule tabulate:
     input:
-        expand("{sample}/coverm/{sample}.coverage_mqc.tsv", sample=samples)
+        counts=expand("{sample}/{sample}.spike_reads.tsv", sample=samples),
     output:
         f"all_coverage.tsv"
     shell: """
-    echo -e "sample\tGenome\tMean\tRelative_Abundance_Perc\tTrimmed_Mean\tCovered_Bases\tVariance\tLength\tRead_Count\tReads_per_base\tRPKM\tTPM" > {output[0]}
+    echo -e "sample\tGenome\ttotal_length\tcounts" > {output[0]}
     for rep in {input}
     do
-    base=$( basename $rep  | sed "s|.coverage_mqc.tsv||g")
-    tail -n+4 $rep | sed "s|^|${{base}}\t|g" >> {output[0]}
+    base=$( basename $rep  | sed "s|.spike_reads.tsv||g")
+    cat $rep | sed "s|^|${{base}}\t|g" >> {output[0]}
     done
     """
 

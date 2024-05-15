@@ -10,20 +10,29 @@ configfile: os.path.join(str(workflow.current_basedir), "config.yaml")
 
 # this formats the fractions to strings so we don't have annoying outputs with sci notation or bad 0 padding
 total_spike_fractions =  [f"{frac:.5f}" for frac in config["total_spike_fractions"]]
+even_coverages =  [f"{frac:.5f}" for frac in config["even_coverages"]]
 
 total_depths = config["total_depths"]
 reps = config["reps"]
 
 spiked_reads = expand('{rep}_depth{depth}_spike{frac}_R{readdir}.fastq.gz',
-                        rep=reps,
-                        depth=total_depths,
-                        frac=total_spike_fractions,
-                        readdir=[1,2])
+                      rep=reps,
+                      depth=total_depths,
+                      frac=total_spike_fractions,
+                      readdir=[1,2])
 spike_stats = expand("{rep}_depth{depth}_spike{frac}.statsfastq",
-                   rep=reps,
-                   depth=total_depths,
-                   frac=total_spike_fractions,
-                   )
+                     rep=reps,
+                     depth=total_depths,
+                     frac=total_spike_fractions,
+                     )
+evenspiked_reads = expand('{rep}_evencoverage{frac}_R{readdir}.fastq.gz',
+                        rep=reps,
+                        frac=even_coverages,
+                        readdir=[1,2])
+evenspike_stats = expand("{rep}_evencoverage{frac}.statsfastq",
+                         rep=reps,
+                         frac=even_coverages,
+                         )
 
 assemblies = expand("spades_{rep}_depth{depth}_spike{frac}.assembly.fasta",
                    rep=reps,
@@ -58,13 +67,16 @@ refined_stats = expand(
 localrules:
     all,
     make_input_table,
+
 all_results = [
-        spiked_reads,
-        spike_stats,
-        assemblies,
-        binstats,
-        "clean.done"
-    ]
+    # spiked_reads,
+    # spike_stats,
+    evenspiked_reads,
+    evenspike_stats,
+    # assemblies,
+    # binstats,
+    # "clean.done"
+]
 
 # only bother attempting to refine the bins if we have at least 10m reads
 if min(total_depths) >= 10000000:
@@ -106,12 +118,12 @@ rule get_references:
       # borrowed some logic from https://www.biostars.org/p/294920/ to smoosh together sequences
       # otherwise, art with generate nreads PER Sequence, not per genome
       name=$(basename $fasta | sed "s|.fa||g")
-      cat $fasta | grep -v "^>" | awk 'BEGIN {{ ORS=""; print ">${{name}}_concatenated\\n" }} {{ print }}' > {output.spikedir}/${{name}}.fasta
+      cat $fasta | grep -v "^>" |  awk  -v header=">${{name}}_concatenated" 'BEGIN {{ ORS=""; print header "\\n" }} {{ print }}' > {output.spikedir}/${{name}}.fasta
     done
     for fasta in D6331.refseq/genomes/*fasta
     do
       name=$(basename $fasta | sed "s|.fasta||g")
-      cat $fasta | grep -v "^>" | awk 'BEGIN {{ ORS=""; print ">${{name}}_concatenated\\n" }} {{ print }}' > {output.mockdir}/${{name}}.fasta
+      cat $fasta | grep -v "^>" |  awk  -v header=">${{name}}_concatenated" 'BEGIN {{ ORS=""; print header "\\n" }} {{ print }}' > {output.mockdir}/${{name}}.fasta
     done
     rm -r tmp_spike
 
@@ -159,6 +171,39 @@ rule simulate:
     params:
         tmppre = lambda wildcards: f"tmp_{wildcards.rep}_depth{wildcards.depth}_spike{wildcards.frac}"
     container:"docker://ghcr.io/vdblab/art:2016.06.05"
+    resources:
+        runtime=4*60
+    threads: 4
+    shell: """
+    set -euxo pipefail
+
+    cat {input.intable} | while read ref nreads
+    do
+        refbase=$(basename $ref)
+        art_illumina --seqSys HS25 --in $ref  --paired --len 150 --rcount $nreads --mflen 500 --sdev 10 --out {params.tmppre}_${{refbase}}_R --rndSeed {wildcards.rep}
+    done
+
+    ls {params.tmppre}*
+    cat {params.tmppre}*R1.fq | pigz > {output.R1}
+    cat {params.tmppre}*R2.fq | pigz > {output.R2}
+    """
+
+rule simulate_even_coverage_datasets:
+    """The expand() in the intable arg is to just select the first table; we
+    are just using it for a list of references needed for combining into our
+    test data
+    """
+    input:
+        mockdir="mock",
+        spikedir="spikes",
+        intable=expand("sim_tables/{rep}_depth{depth}_spike{frac}.tab", rep=reps[0], depth=total_depths[0], frac=total_spike_fractions[0])
+    output:
+        R1='{rep}_evencoverage{frac}_R1.fastq.gz',
+        R2='{rep}_evencoverage{frac}_R2.fastq.gz',
+        intermediate_trigger=touch("{rep}_evencoverage{frac}_individual_reference_fastq_present"),
+    params:
+        tmppre = lambda wildcards: f"tmp_{wildcards.rep}_evencoverage{wildcards.frac}"
+    container:"docker://ghcr.io/vdblab/art:2016.06.05"
     threads: 4
     shell: """
     set -euxo pipefail
@@ -167,7 +212,7 @@ rule simulate:
     cat {input.intable} | while read ref nreads
     do
         refbase=$(basename $ref)
-        art_illumina --seqSys HS25 --in $ref  --paired --len 150 --rcount $nreads --mflen 500 --sdev 10 --out {params.tmppre}_${{refbase}}_R --rndSeed {wildcards.rep}
+        art_illumina --seqSys HS25 --in $ref  --paired --len 150 --fcov {wildcards.frac} --mflen 500 --sdev 10 --out {params.tmppre}_${{refbase}}_R --rndSeed {wildcards.rep}
     done
 
     ls {params.tmppre}*
@@ -184,6 +229,25 @@ rule stats:
         stats="{rep}_depth{depth}_spike{frac}.statsfastq"
     params:
         tmppre = lambda wildcards: f"tmp_{wildcards.rep}_depth{wildcards.depth}_spike{wildcards.frac}"
+    container: "docker://ghcr.io/vdblab/seqkit:2.3.1"
+    threads: 8
+    shell:"""
+    # gather all the per-reference fastq stats
+    seqkit stats {params.tmppre}*.fq > {output.stats}
+    # gather the final stats
+    seqkit stats {input.R1} {input.R2} | tail -n+2  >> {output.stats}
+    """
+
+
+rule evenstats:
+    input:
+        R1="{rep}_evencoverage{frac}_R1.fastq.gz",
+        R2="{rep}_evencoverage{frac}_R2.fastq.gz",
+        intermediate_trigger="{rep}_evencoverage{frac}_individual_reference_fastq_present",
+    output:
+        stats="{rep}_evencoverage{frac}.statsfastq"
+    params:
+        tmppre = lambda wildcards: f"tmp_{wildcards.rep}_evencoverage{wildcards.frac}"
     container: "docker://ghcr.io/vdblab/seqkit:2.3.1"
     threads: 8
     shell:"""

@@ -18,7 +18,10 @@ assert "spiketable" in config.keys(), "spiketable is a required config argument!
 
 #mapper = "minimap2-sr"
 #if "mapper" in config.keys():
-assert config["mapper"] in ["minimap2-sr", "bwa-mem"], "aligner must be either minimap2-sr or bwa-mem"
+if config["mapper"] == "bowtie2":
+    raise ValueError("Ideal alignment parameters for bowtie2 have not been identified currently")
+
+assert config["mapper"] in ["minimap2-sr", "bwa-mem"], "aligner must be either minimap2-sr , or bwa-mem"
 #    mapper = config["mapper"]
 
 offtarget = None
@@ -45,7 +48,6 @@ for i in SPIKEDF.path.tolist():
 #df["sample"] = manif_base
 #df = df.set_index("sample")
 
-config["spike_names"] = set(SPIKEDF.name.tolist())
 
 envvars:
     "TMPDIR",
@@ -70,7 +72,7 @@ localrules:
 
 rule all:
     input:
-        f"{config['sample']}.spike_reads.tsv",
+        f'{config["sample"]}.spike_reads.tsv',
         f'{config["sample"]}_nospike_R1.fastq.gz',
         f'{config["sample"]}_nospike_R2.fastq.gz',
         f'{config["sample"]}_ani_results.tsv',
@@ -129,7 +131,6 @@ rule ani_filter:
         pairs_for_vis="{sample}_close_ani.tsv",
         ref="{sample}_reference.fa",
     params:
-#        spike_names = config["spike_names"],
         ani_thresh = 95
     run:
         import os
@@ -157,7 +158,7 @@ rule ani_filter:
                     continue
                 line_is_spike = False
                 bin_index = None
-                for spike_name in params.spike_names:
+                for spike_name in spike_names:
                     if spike_name in line:
                         line_is_spike = True
                         if spike_name in query:
@@ -173,9 +174,9 @@ rule ani_filter:
                         for faline in fasta:
                             if faline.startswith(">"):
                                 header = faline.replace(">", "")
-                                id = faline.split()[0]
-                                genome_name = line.strip().replace(".fa", "---")
-                                faline = f">{genome_name}{id}"
+                                id = header.split()[0]
+                                genome_name = os.path.basename(line.strip().replace(".fa", "---"))
+                                faline = f">{genome_name}{id}\n"
                             outf.write(faline)
                     #dest =  os.path.join(output.bindir, os.path.basename(line.strip()))
                     #if not os.path.exists(dest):
@@ -275,7 +276,7 @@ elif config["mapper"] == "bowtie2":
         container:"docker://staphb/bowtie2:2.5.3"
         threads: 32
         shell:"""
-        bowtie2-build --threads {threads} {input.dbbase}
+        bowtie2-build --threads {threads} {input.dbbase} {input.dbbase}
         bowtie2 --threads {threads} -x {input.dbbase} -1 {input.reads[0]} -2 {input.reads[0]}  --very-sensitive --no-discordant > {output.bam}
         """
 else:
@@ -311,8 +312,7 @@ rule index_and_clean:
     # that bam gets indexed and used for coverage calculation
     samtools sort -@{threads} -o {input.sam}.bam {input.sam}
     samtools view -H {input.sam}.bam |\
-    sed -e 's/SN:Haloarcula_hispanica.*---/SN:/' | \
-    sed -e 's/SN:Salinibacter.*---/SN:/' | samtools reheader - {input.sam}.bam > {output.bam}.tmp
+    sed -e 's/SN:.*---/SN:/' |  samtools reheader - {input.sam}.bam > {output.bam}.tmp
     # 3852 negated should keep all aligned, properly paired, primary alignments
     # rname == rnext should keep only concordant pairs
     # "(rlen(length(seq)) >= .97" should retain only alignments where there was greater than 97% overlap
@@ -343,14 +343,18 @@ rule run_bed_based_coverage_calculations:
     # subset bam to regions in the bed file.  The -f argument is much more
     # usable here rather than in multicov, because it is relative to the bam here.
     # we want to filter based on how much of the read overlaps the region, rather than
-# the other way around; this is because the regions have variable length, and this
-# argument is a fraction of the length not an integer of overlapping bases
+    # the other way around; this is because the regions have variable length, and this
+    # argument is a fraction of the length not an integer of overlapping bases
     bedtools intersect -a {input.bam}  -b {input.bed} -f .5  > {output.cov}.tmp.bam
+
     samtools index {output.cov}.tmp.bam
+
     bedtools multicov -bams {output.cov}.tmp.bam  -bed {input.bed}   > {output.cov}
+
     reads_in_regions=$(awk '{{s+=$4}} END {{print s}}' {output.cov})
     echo -e "{wildcards.bed}\t${{bedlen}}\t${{reads_in_regions}}" > {output.tsv}
-    rm  {output.cov}.tmp.bam
+
+    rm  {output.cov}.tmp.*
     """
 
 
