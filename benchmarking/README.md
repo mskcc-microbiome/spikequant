@@ -101,3 +101,10 @@ snakemake --snakefile benchmarking/run.smk --directory $PWD/benchmarking/v2/ --c
 
 ls benchmarking/v3/*/coverm/*.tsv | grep -v "mqc" | grep "Salini\|Haloa" | while read i; do bname=$(basename $i) ; cat $i | sed "s|^|$bname\t|g"; done > benchmarking/v3_res.tsv
 ```
+
+
+# Benchmarking performance against undepleted samples
+```
+ls benchmarking/v4/*/*_nospike_R1.fastq.gz > benchmarking/v4/manifest_R1
+ls benchmarking/data/*_R1.fastq.gz  >> benchmarking/v4/manifest_R1
+```

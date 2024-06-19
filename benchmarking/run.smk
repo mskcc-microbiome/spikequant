@@ -8,7 +8,8 @@ from snakemake.utils import validate
 from io import StringIO
 import pandas as  pd
 
-mappers = ["minimap2-sr", "bwa-mem", "bowtie2"]
+#mappers = ["minimap2-sr", "bwa-mem", "bowtie2"]
+mappers = ["minimap2-sr", "bwa-mem"]
 zymo = config["zymo_genomes"]
 #beds = {os.path.basename(x).replace(".bed", ""): os.path.join(str(workflow.current_basedir),"../",  x) for x in glob.glob(os.path.join(workflow.current_basedir, "beds/*.bed"))}
 # make this a dict for easier lookup
@@ -19,14 +20,19 @@ spike_manifests = {os.path.splitext(os.path.basename(x))[0]: x for x in config["
 with open(config["testdata_config"], "r") as inf:
     testdata_config = yaml.safe_load(inf)
     testdata_config["total_spike_fractions"] =  [f"{frac:.5f}" for frac in testdata_config["total_spike_fractions"]]
+    testdata_config["even_coverages"] =  [f"{frac:.5f}" for frac in testdata_config["even_coverages"]]
     #testdata_config["total_spike_fractions"] =  [f"{frac:.5f}" for frac in [testdata_config["total_spike_fractions"][0]]]
 
+covtypes = expand("depth{x}_spike{y}",
+                  x=testdata_config["total_depths"],
+                  y=testdata_config["total_spike_fractions"])
+covtypes.extend([f"evencoverage{x}"  for x in testdata_config["even_coverages"]])
 
 #manif_base = [f"{rep}_depth10000000_spike{perc}" for rep in range(1,6) for perc in testdata_config["total_spike_fractions]["0.00000", "0.00001", "0.00010", "0.00100", "0.01000", "0.10000", "1.00000"]]
-manif_base = expand("{rep}_depth10000000_spike{perc}",
+manif_base = expand("{rep}_{cov}",
                     rep=testdata_config["reps"],
-                    depth=testdata_config["total_depths"],
-                    perc=testdata_config["total_spike_fractions"])
+                    cov=covtypes
+                    )
 
 sample_bases = expand("{manif_base}_offtarget{offtarget}_mapper{mapper}",
                  manif_base = manif_base,

@@ -39,6 +39,10 @@ assemblies = expand("spades_{rep}_depth{depth}_spike{frac}.assembly.fasta",
                    depth=total_depths,
                    frac=total_spike_fractions,
 )
+evenassemblies = expand("spades_{rep}_evencoverage{frac}.assembly.fasta",
+                        rep=reps,
+                        frac=even_coverages,
+)
 
 BINNING_TOOLS = ["concoct", "metabat2", "maxbin2"]
 binstats = expand(
@@ -46,6 +50,12 @@ binstats = expand(
                    rep=reps,
                    depth=total_depths,
                    frac=total_spike_fractions,
+    tool=BINNING_TOOLS,
+)
+evenbinstats = expand(
+    "metawrap/rawbinning_{rep}_evencoverage{fcov}/{tool}/{tool}_bins/{tool}.done",
+    rep=reps,
+    fcov=even_coverages,
     tool=BINNING_TOOLS,
 )
 
@@ -62,6 +72,11 @@ refined_stats = expand(
                    depth=total_depths,
                    frac=total_spike_fractions,
 )
+refined_stats_even = expand(
+    f'metawrap/refined_binning_{{rep}}_evencoverage{{fcov}}/metawrap_{config["metawrap_compl_thresh"]}_{config["metawrap_contam_thresh"]}_bins.stats',
+    rep=reps,
+    fcov=even_coverages,
+)
 
 
 localrules:
@@ -73,8 +88,11 @@ all_results = [
     # spike_stats,
     evenspiked_reads,
     evenspike_stats,
+    evenassemblies,
     # assemblies,
-    # binstats,
+    binstats,
+    evenbinstats,
+    refined_stats_even,
     # "clean.done"
 ]
 
@@ -198,21 +216,30 @@ rule simulate_even_coverage_datasets:
         spikedir="spikes",
         intable=expand("sim_tables/{rep}_depth{depth}_spike{frac}.tab", rep=reps[0], depth=total_depths[0], frac=total_spike_fractions[0])
     output:
-        R1='{rep}_evencoverage{frac}_R1.fastq.gz',
-        R2='{rep}_evencoverage{frac}_R2.fastq.gz',
-        intermediate_trigger=touch("{rep}_evencoverage{frac}_individual_reference_fastq_present"),
+        R1='{rep}_evencoverage{fcov}_R1.fastq.gz',
+        R2='{rep}_evencoverage{fcov}_R2.fastq.gz',
+        intermediate_trigger=touch("{rep}_evencoverage{fcov}_individual_reference_fastq_present"),
     params:
-        tmppre = lambda wildcards: f"tmp_{wildcards.rep}_evencoverage{wildcards.frac}"
+        tmppre = lambda wildcards: f"tmp_{wildcards.rep}_evencoverage{wildcards.fcov}"
     container:"docker://ghcr.io/vdblab/art:2016.06.05"
     threads: 4
     shell: """
     set -euxo pipefail
 
-    # look a loop! could use parallel but this is a one-off for generating test data.
     cat {input.intable} | while read ref nreads
     do
-        refbase=$(basename $ref)
-        art_illumina --seqSys HS25 --in $ref  --paired --len 150 --fcov {wildcards.frac} --mflen 500 --sdev 10 --out {params.tmppre}_${{refbase}}_R --rndSeed {wildcards.rep}
+      refbase=$(basename $ref)
+      refdir=$(dirname $ref)
+      echo $refdir
+      if [ "$refdir" == "spikes" ]
+      then
+        echo "simulating fractional coverage for $refbase"
+        art_illumina --seqSys HS25 --in $ref  --paired --len 150 --fcov {wildcards.fcov} --mflen 500 --sdev 10 --out {params.tmppre}_${{refbase}}_R --rndSeed {wildcards.rep}
+      else
+        echo "simulating 1x coverage for $refbase"
+        art_illumina --seqSys HS25 --in $ref  --paired --len 150 --fcov 1 --mflen 500 --sdev 10 --out {params.tmppre}_${{refbase}}_R --rndSeed {wildcards.rep}
+      fi
+
     done
 
     ls {params.tmppre}*
@@ -241,13 +268,13 @@ rule stats:
 
 rule evenstats:
     input:
-        R1="{rep}_evencoverage{frac}_R1.fastq.gz",
-        R2="{rep}_evencoverage{frac}_R2.fastq.gz",
-        intermediate_trigger="{rep}_evencoverage{frac}_individual_reference_fastq_present",
+        R1="{rep}_evencoverage{fcov}_R1.fastq.gz",
+        R2="{rep}_evencoverage{fcov}_R2.fastq.gz",
+        intermediate_trigger="{rep}_evencoverage{fcov}_individual_reference_fastq_present",
     output:
-        stats="{rep}_evencoverage{frac}.statsfastq"
+        stats="{rep}_evencoverage{fcov}.statsfastq"
     params:
-        tmppre = lambda wildcards: f"tmp_{wildcards.rep}_evencoverage{wildcards.frac}"
+        tmppre = lambda wildcards: f"tmp_{wildcards.rep}_evencoverage{wildcards.fcov}"
     container: "docker://ghcr.io/vdblab/seqkit:2.3.1"
     threads: 8
     shell:"""
@@ -259,7 +286,6 @@ rule evenstats:
 
 
 rule spades:
-    # TODO: add in params for read length to experiment with larger kmers than default
     input:
         R1="{rep}_depth{depth}_spike{frac}_R1.fastq.gz",
         R2="{rep}_depth{depth}_spike{frac}_R2.fastq.gz",
@@ -290,6 +316,19 @@ rule spades:
         mv {output.outdir}/assembly_graph_with_scaffolds.gfa {output.graph}
         """
 
+use rule spades as spades_evencoverage with :
+    # TODO: add in params for read length to experiment with larger kmers than default
+    input:
+        R1="{rep}_evencoverage{fcov}_R1.fastq.gz",
+        R2="{rep}_evencoverage{fcov}_R2.fastq.gz",
+    output:
+        assembly="spades_{rep}_evencoverage{fcov}.assembly.fasta",
+        graph="spades_{rep}_evencoverage{fcov}.assembly_graph.gfa",
+        outdir=directory("spades_{rep}_evencoverage{fcov}/"),
+        spades_log="spades_{rep}_evencoverage{fcov}/spades.log",
+    log:
+        e="logs/spades_{rep}_evencoverage{fcov}.log",
+
 
 rule unzip_rename_fastq_for_metawrap:
     """ metawrap needs uncompressed fastqs with a specific naming convention
@@ -306,6 +345,13 @@ rule unzip_rename_fastq_for_metawrap:
         zcat {input.R1} > {output.R1}
         zcat {input.R2} > {output.R2}
         """
+use rule unzip_rename_fastq_for_metawrap as unzip_rename_fastq_for_metawrap_evencoverage with :
+    input:
+        R1="{rep}_evencoverage{fcov}_R1.fastq.gz",
+        R2="{rep}_evencoverage{fcov}_R2.fastq.gz",
+    output:
+        R1=temp("bintmp_{rep}_evencoverage{fcov}_1.fastq"),
+        R2=temp("bintmp_{rep}_evencoverage{fcov}_2.fastq"),
 
 
 rule metawrap_binning:
@@ -331,6 +377,13 @@ rule metawrap_binning:
         touch {output.stats}
         """
 
+use rule metawrap_binning as metawrap_binning_evencoverage with:
+    input:
+        R1=temp("bintmp_{rep}_evencoverage{fcov}_1.fastq"),
+        R2=temp("bintmp_{rep}_evencoverage{fcov}_2.fastq"),
+        assembly="spades_{rep}_evencoverage{fcov}.assembly.fasta",
+    output:
+        stats="metawrap/rawbinning_{rep}_evencoverage{fcov}/{tool}/{tool}_bins/{tool}.done",
 
 rule metawrap_refine_binning:
     """The names for the params binput_dirs is due to the crazy naming of the output of metawrap.
@@ -366,6 +419,17 @@ rule metawrap_refine_binning:
         metawrap bin_refinement -o {params.outdir} -t {threads} -A {params.binput_dirs[0]} -B {params.binput_dirs[1]} -C {params.binput_dirs[2]} -c {params.completeness} -x {params.contamination}
         echo -e "#id: 'metawrap'\n#plot_type: 'table'\n#section_name: 'Bin Refinement'" > {output.stats}_mqc.tsv && cat {output.stats} >> {output.stats}_mqc.tsv
         """
+
+use rule metawrap_refine_binning as metawrap_refine_binning_evencoverage with:
+    input:
+        binputs=expand("metawrap/rawbinning_{{rep}}_evencoverage{{fcov}}/{tool}/{tool}_bins/{tool}.done", tool=BINNING_TOOLS),
+    output:
+        stats=f'metawrap/refined_binning_{{rep}}_evencoverage{{fcov}}/metawrap_{config["metawrap_compl_thresh"]}_{config["metawrap_contam_thresh"]}_bins.stats',
+        stats_mqc=f'metawrap/refined_binning_{{rep}}_evencoverage{{fcov}}/metawrap_{config["metawrap_compl_thresh"]}_{config["metawrap_contam_thresh"]}_bins.stats_mqc.tsv',
+        contigs=f'metawrap/refined_binning_{{rep}}_evencoverage{{fcov}}/metawrap_{config["metawrap_compl_thresh"]}_{config["metawrap_contam_thresh"]}_bins.contigs',
+        bin1=f"metawrap/refined_binning_{{rep}}_evencoverage{{fcov}}/{BINNING_TOOLS[0]}_bins.stats",
+        bin2=f"metawrap/refined_binning_{{rep}}_evencoverage{{fcov}}/{BINNING_TOOLS[1]}_bins.stats",
+        bin3=f"metawrap/refined_binning_{{rep}}_evencoverage{{fcov}}/{BINNING_TOOLS[2]}_bins.stats",
 
 rule cleanup:
     input:

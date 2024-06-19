@@ -2,7 +2,7 @@
 total_spike_fractions: [.1]
 total_depths:
  - 100000
-even_coverages: [0, .1, .5, 1, 5]
+even_coverages: [.1]
 reps: [1]
 
 docker_spades: "docker://staphb/spades:3.15.4"
