@@ -84,12 +84,12 @@ localrules:
     make_input_table,
 
 all_results = [
-    # spiked_reads,
-    # spike_stats,
+    spiked_reads,
+    spike_stats,
     evenspiked_reads,
     evenspike_stats,
     evenassemblies,
-    # assemblies,
+    assemblies,
     binstats,
     evenbinstats,
     refined_stats_even,
@@ -112,6 +112,8 @@ rule get_references:
     output:
         mockdir=directory("mock"),
         spikedir=directory("spikes"),
+    params:
+        exclude_t_reesei=config["exclude_t_reesei"],
     shell:"""
     set -eoux pipefail
     # wget complains if this is present
@@ -127,7 +129,12 @@ rule get_references:
 
     curl -o - ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/013/045/GCA_000013045.1_ASM1304v1/GCA_000013045.1_ASM1304v1_genomic.fna.gz | gunzip > tmp_spike/Salinibacter_ruber.fa
     # getting Trichoderma reesei  QM6a instead of  Trichoderma reesei ATCC 13631 .  Might be fine license-wise but not sure
-    curl -o - ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/167/675/GCF_000167675.1_v2.0/GCF_000167675.1_v2.0_genomic.fna.gz | gunzip  > tmp_spike/Trichoderma_reesei.fa
+    if [ "{params.exclude_t_reesei}" != "true" ]
+    then
+       curl -o - ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/167/675/GCF_000167675.1_v2.0/GCF_000167675.1_v2.0_genomic.fna.gz | gunzip  > tmp_spike/Trichoderma_reesei.fa
+    else
+       echo "excluding T reesei"
+    fi
     # getting CBA1121 instead of Haloarcula hispanica ATCC 33960  for the same reason.
     curl -o - ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/008/729/095/GCF_008729095.1_ASM872909v1/GCF_008729095.1_ASM872909v1_genomic.fna.gz | gunzip  > tmp_spike/Haloarcula_hispanica.fa
 
@@ -170,11 +177,9 @@ rule make_input_table:
         each_spike =  math.floor(total_spike/nspikes)
         with open(output.outtable, "w") as outf:
             for spike in spikes:
-                if each_spike != 0:
-                    outf.write(f"{spike}\t{each_spike}\n")
+                outf.write(f"{spike}\t{each_spike}\n")
             for mock in mocks:
-                if each_non_spike != 0:
-                    outf.write(f"{mock}\t{each_non_spike}\n")
+                outf.write(f"{mock}\t{each_non_spike}\n")
 
 
 rule simulate:
@@ -195,7 +200,7 @@ rule simulate:
     shell: """
     set -euxo pipefail
 
-    cat {input.intable} | while read ref nreads
+    cat {input.intable} |  awk  '$2 != 0'  | while read ref nreads
     do
         refbase=$(basename $ref)
         art_illumina --seqSys HS25 --in $ref  --paired --len 150 --rcount $nreads --mflen 500 --sdev 10 --out {params.tmppre}_${{refbase}}_R --rndSeed {wildcards.rep}
@@ -225,7 +230,8 @@ rule simulate_even_coverage_datasets:
     threads: 4
     shell: """
     set -euxo pipefail
-
+    # here we don't remove the 0 reads lines becuase those are only
+    # relevant for the even-reads simulation
     cat {input.intable} | while read ref nreads
     do
       refbase=$(basename $ref)
@@ -299,7 +305,7 @@ rule spades:
     resources:
         mem_mb=58*1024,
         runtime=48 * 60,
-    threads: 64
+    threads: 30
     log:
         e="logs/spades_{rep}_depth{depth}_spike{frac}.log",
     shell:
@@ -367,7 +373,7 @@ rule metawrap_binning:
         outdir=lambda wc, output: os.path.dirname(os.path.dirname(output.stats)),
     container:
         config["docker_metawrap"]
-    threads: 64
+    threads: 48
     resources:
         mem_mb=32 * 1024,
         runtime=12 * 60,
@@ -379,8 +385,8 @@ rule metawrap_binning:
 
 use rule metawrap_binning as metawrap_binning_evencoverage with:
     input:
-        R1=temp("bintmp_{rep}_evencoverage{fcov}_1.fastq"),
-        R2=temp("bintmp_{rep}_evencoverage{fcov}_2.fastq"),
+        R1="bintmp_{rep}_evencoverage{fcov}_1.fastq",
+        R2="bintmp_{rep}_evencoverage{fcov}_2.fastq",
         assembly="spades_{rep}_evencoverage{fcov}.assembly.fasta",
     output:
         stats="metawrap/rawbinning_{rep}_evencoverage{fcov}/{tool}/{tool}_bins/{tool}.done",
@@ -408,7 +414,7 @@ rule metawrap_refine_binning:
     # this is a different container that has checkm installed
     container:
         config["docker_metawrap"]
-    threads: 32
+    threads: 30
     # give it 82 gb memory because checkm estimates pplacer will need 40GB per core, and we want this to run reasonably fast
     resources:
         mem_mb=82 * 1024,

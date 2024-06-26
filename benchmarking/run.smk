@@ -11,7 +11,9 @@ import pandas as  pd
 #mappers = ["minimap2-sr", "bwa-mem", "bowtie2"]
 mappers = ["minimap2-sr", "bwa-mem"]
 zymo = config["zymo_genomes"]
-#beds = {os.path.basename(x).replace(".bed", ""): os.path.join(str(workflow.current_basedir),"../",  x) for x in glob.glob(os.path.join(workflow.current_basedir, "beds/*.bed"))}
+#offtargets = ["none", "zymo", "assembly", "bins"]
+
+offtargets = ["none", "zymo", "assembly"]
 # make this a dict for easier lookup
 spike_manifests = {os.path.splitext(os.path.basename(x))[0]: x for x in config["spike_manifests"]}
 
@@ -36,12 +38,12 @@ manif_base = expand("{rep}_{cov}",
 
 sample_bases = expand("{manif_base}_offtarget{offtarget}_mapper{mapper}",
                  manif_base = manif_base,
-                 offtarget = ["none", "zymo", "bins", "assembly"],
+                 offtarget = offtargets,
                  mapper=mappers)
 
 samples = expand("{manif_base}_offtarget{offtarget}_mapper{mapper}_quanttype{quanttype}",
                  manif_base = manif_base,
-                 offtarget = ["none", "zymo", "bins", "assembly"],
+                 offtarget = offtargets,
                  mapper=mappers,
                  quanttype=spike_manifests.keys())
 
@@ -57,8 +59,9 @@ for i in df.R1s:
     assert os.path.exists(i), f"{i} doesn't exist"
 for i in df.R2s:
     assert os.path.exists(i), f"{i} doesn't exist"
-for i in df.bindir:
-    assert os.path.isdir(i), f"{i} doesn't exist"
+if "bins" in offtargets:
+    for i in df.bindir:
+        assert os.path.isdir(i), f"{i} doesn't exist"
 for i in df.assembly:
     assert os.path.exists(i), f"{i} doesn't exist"
 

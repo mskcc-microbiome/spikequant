@@ -391,7 +391,7 @@ rule get_nonspike_reads:
     samtools view -H  {input.bam} | grep "Salinibacter\|Trichoderma\|Haloarcula" | cut -f 2,3 | sed "s|SN:||g" | sed "s|LN:|1\t|g" | sort -k1,1 -k2,2n > {output.bed}
 
     # inspired by https://www.biostars.org/p/473204/
-    samtools view -L {output.bed} -U unsorted_{output.nonspike} -o tmp_unsorted_spikes_{wildcards.sample}.bam -@ {threads} {input.bam}
+    samtools view -L {output.bed} -F 3852 -e "rname == rnext && ((rlen/length(seq)) >= .97) && ([NM]/rlen <= .03)"  -U unsorted_{output.nonspike} -o tmp_unsorted_spikes_{wildcards.sample}.bam -@ {threads} {input.bam}
     # make sure you NAME-sort before running samtools fastq https://www.biostars.org/p/454942/
     samtools sort -n -o {output.nonspike} unsorted_{output.nonspike}
     samtools sort -n -o tmp_sorted_spikes_{wildcards.sample}.bam tmp_unsorted_spikes_{wildcards.sample}.bam
