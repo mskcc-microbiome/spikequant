@@ -1,7 +1,7 @@
-total_spike_fractions: [0, .00001]#, .0001, .001, .01, .1, 1]
+total_spike_fractions: [0, .00001, .0001, .001, .01, .1, 1]
 total_depths:
  - 10000000
-reps: [1] #,2,3,4,5]
+reps: [1,2,3,4,5]
 even_coverages:  [0, 0.01, .1, .5, 1, 5]
 exclude_t_reesei: false
 docker_spades: "docker://staphb/spades:3.15.4"
