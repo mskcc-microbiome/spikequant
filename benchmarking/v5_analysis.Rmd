@@ -1,0 +1,182 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+```{r}
+
+library(tidyverse)
+library(patchwork)
+theme_set(theme_bw())
+spikes <- c("Haloarcula_hispanica", "Salinibacter_ruber", "Trichoderma_reesei")
+spikes_pri <- paste0(spikes, "_primary") 
+spikes_markers <- paste0(spikes, "_markers") 
+spikes_pri_masked <- paste0(spikes, "_primary_masked") 
+system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/data_summary.tsv benchmarking/data_summary.tsv")
+system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/v5/all_missed_spike_counts.tsv benchmarking/all_missed_spike_counts.tsv")
+
+# the pivot prior to akkermansia filtering ensures we have 0 counts where no spike reads were detected
+missed_spikes <- read.csv("benchmarking/all_missed_spike_counts.tsv", sep="\t", header=FALSE, col.names = c("rawsample", "readdir", "x")) %>% 
+  mutate(
+    genome_base = gsub(".* \\@(.*)_concatenated", "\\1", x),
+    nreads = as.numeric(gsub("(.*) \\@(.*)_concatenated", "\\1", x)),
+  ) %>% 
+  group_by(rawsample, genome_base) %>% 
+  summarize(false_neg_reads = sum(nreads)) %>% 
+  pivot_wider(names_from = genome_base, values_from=false_neg_reads, values_fill = 0) %>% 
+  pivot_longer(cols = -rawsample, names_to = "genome_base", values_to = "false_neg_reads") %>%
+  filter(genome_base != "Akkermansia_muciniphila")
+data_summary_most <- read.csv("benchmarking/data_summary.tsv", sep="\t") %>%
+  #filter(!grepl("spike0.00000", file)) %>% 
+  mutate(
+    true_count=as.numeric(gsub(",", "", num_seqs)),
+    sample=gsub(".*?_(\\d+_depth.*?_spike.*?)_.*", "\\1", file),
+    Genome = gsub(".*?_(\\d+_depth.*?_spike.*?)_(.*).fasta.*", "\\2", file),
+    is_spike =Genome %in% c(spikes, spikes_pri)
+  ) %>% 
+  group_by(sample,is_spike, Genome) %>% 
+  summarize(true_count = sum(true_count)) %>%
+  ungroup() %>%
+  group_by(sample) %>% 
+  mutate(total = sum(true_count)) %>%
+  ungroup() %>% 
+  filter( is_spike)%>% 
+  select(sample, Genome, true_count, total) %>% 
+  distinct()
+# parse the ones lacking any spikes so we still have totals
+# the left join with the dummy data makes the merging below more straightforward
+data_summary_nospike <- read.csv("benchmarking/data_summary.tsv", sep="\t") %>% 
+  filter(grepl("spike0.00000", file)) %>% 
+  mutate(
+    true_count=as.numeric(gsub(",", "", num_seqs)),
+    sample=gsub(".*?_(\\d+_depth.*?_spike.*?)_.*", "\\1", file),
+  ) %>% 
+  group_by(sample) %>% 
+  summarize(total = sum(true_count)) %>% ungroup() %>%
+  mutate(true_count=0) %>% 
+  left_join(data.frame(true_count=rep(0, length(spikes)), Genome=spikes), relationship= "many-to-many")
+
+data_summary <- bind_rows(data_summary_most,data_summary_nospike) %>% 
+  rename("genome_base" = "Genome")
+dir.create("benchmarking/v5")
+system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/v5/all_coverage.tsv benchmarking/v5/all_coverage.tsv")
+res5_pre = read.csv("benchmarking/v5/all_coverage.tsv" , sep="\t", header=TRUE, col.names = c("rawsample", "spike", "len", "nreads") )%>% 
+    mutate(
+      rep=gsub("(.*?)_.*quanttype(.*)$", "\\1", rawsample),
+      quantref=gsub(".*quanttype(.*)", "\\1", rawsample),
+      quantbed=gsub("(.*?)_(.*?)_(.*)", "\\3", spike ),
+      sample=gsub("(.*?)_offtarget.*", "\\1", rawsample),
+      dbtype=gsub("(.*?)_offtarget(.*?)_.*", "\\2", rawsample),
+      aligner=gsub("(.*?)_mapper(.*?)_.*", "\\2", rawsample),
+      target=as.numeric(gsub(".*_spike(.*?)_.*", "\\1", rawsample)),
+    ) %>%
+mutate(
+  nreads=as.double(nreads),
+  genome_base = gsub("(.*?)_(.*?)_.*", "\\1_\\2", spike )
+  ) %>% 
+  filter(!(genome_base == "Trichoderma_reesei" & quantref=="markers")) %>% 
+  group_by(genome_base) %>% 
+  mutate(full_genome_length = max(len, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  left_join(data_summary, by = c("sample", "genome_base"))  %>% 
+  rowwise()%>% 
+  mutate(theoretical_total = as.double((nreads * full_genome_length) / len),
+         theoretical_total = ifelse(is.infinite(theoretical_total), 0, theoretical_total)) %>% 
+  mutate(
+  counts = theoretical_total, # for consistency with v2
+  count_percent = (true_count) /counts,
+       count_diff = counts - true_count,
+       count_percent = ifelse(count_diff == 0, 1, 
+                              ifelse(counts>1 & true_count == 0, 1.2, count_percent))) 
+res5 <- res5_pre %>% 
+  filter(grepl("bwa-mem", rawsample)) %>% 
+  filter(grepl("depth10000000", rawsample)) 
+
+ggplot(res5, aes(x=quantbed, y=count_percent)) +
+  geom_point() + facet_grid(target~interaction(aligner, dbtype), space="free", scales = "free")
+
+ggplot(res5 %>%
+         group_by(target, aligner, quantbed) %>%
+         mutate(xint = ifelse(row_number() == 1, true_count, NA)), 
+       aes(y=dbtype, x=theoretical_total, color=quantref, shape=quantref)) +
+  geom_vline(aes(xintercept = xint), color = "black", linetype = "dotted") + 
+  geom_jitter(width=0) + 
+  facet_grid( genome_base ~  target, scales="free") + 
+  theme(axis.text.x = element_text(angle=45, hjust=1),plot.caption = element_text(hjust = 0)
+  )
+
+missed_spikes %>% left_join(res5 %>% select(rawsample, rep:true_count))
+
+data_heat_summary_v5 <- res5 %>%
+  filter(aligner == "bwa-mem") %>% 
+  group_by(target, genome_base) %>%
+  summarize(mx = max(abs(count_diff)), mn = min(abs(count_diff))) 
+
+res5 %>% 
+  filter(aligner == "bwa-mem") %>% 
+  inner_join(data_heat_summary_v5) %>%
+  mutate(p = ((abs(count_diff) - mn ) / (mx - mn)) * sign(count_diff)) %>% 
+  ggplot(aes(y = interaction(rep, dbtype ), x = interaction(quantref))) + 
+  geom_tile(aes(fill = p), colour = "black") + 
+  scale_fill_gradient2(low = "#435F44", mid = "white", high = "firebrick") + 
+  facet_grid(genome_base ~  target, space="free") +
+  theme(axis.text.x = element_text(angle=90, hjust=1))  +
+  geom_text(aes(label = round(count_diff))) +
+  labs(x="Quantification Region", y = "Replicate and Alignment off-target database",
+       title="Version 3: Coverage calculated by BedTools multicov, filtered for alignment length",
+       subtitle="Number in cells is the detected count - true count\n Color shows sign and magnitute fo difference ",
+       fill="Relative difference")
+
+
+
+data_heat_summary_v5_falseneg <-missed_spikes %>% left_join(res5_pre %>% select(rawsample, rep:true_count)) %>% 
+  group_by(target, genome_base) %>%
+  summarize(mx = max(abs(false_neg_reads)), mn = min(abs(false_neg_reads))) 
+
+missed_spikes %>% left_join(res5_pre %>% select(rawsample, rep:true_count)) %>% 
+  #filter(aligner == "bwa-mem") %>% 
+  filter(quantref=="raw") %>% 
+  inner_join(data_heat_summary_v5_falseneg) %>%
+  mutate(p = ((abs(false_neg_reads) - mn ) / (mx - mn)) * sign(false_neg_reads)) %>% 
+  ggplot(aes(y = interaction(dbtype,rep ), x = interaction(aligner))) + 
+  geom_tile(aes(fill = p), colour = "black") + 
+  scale_fill_gradient2(low = "#435F44", mid = "white", high = "navy") + 
+  facet_grid(genome_base ~  target, space="free") +
+  theme(axis.text.x = element_text(angle=90, hjust=1))  +
+  geom_text(aes(label = round(false_neg_reads))) +
+  labs(x="Aligner", y = "Replicate and Alignment off-target database",
+       title="Spike reads missed by spikequant ",
+       subtitle="Number shows false-negative read count\n Color shows sign and magnitute of difference by organism and input spike count",
+       fill="Relative difference")
+
+
+
+
+
+
+
+data_heat_summary_v3_nomarkers <- res %>%
+  filter(aligner == "bwa-mem") %>% 
+  filter(quantref != "markers") %>% 
+  group_by(target, genome_base) %>%
+  summarize(mx = max(abs(count_diff)), mn = min(abs(count_diff))) 
+
+
+res %>% 
+  filter(aligner == "bwa-mem") %>% 
+  filter(quantref != "markers") %>% 
+  inner_join(data_heat_summary_v3_nomarkers) %>%
+  mutate(p = ((abs(count_diff) - mn ) / (mx - mn)) * sign(count_diff)) %>% 
+  ggplot(aes(y = interaction(rep, dbtype ), x = interaction(quantref))) + 
+  geom_tile(aes(fill = p), colour = "black") + 
+  scale_fill_gradient2(low = "#435F44", mid = "white", high = "firebrick") + 
+  facet_grid(genome_base ~  target, space="free") +
+  theme(axis.text.x = element_text(angle=90, hjust=1))  +
+  geom_text(aes(label = round(count_diff))) +
+  labs(x="Quantification Region", y = "Replicate and Alignment off-target database",
+       title="Version 3: Coverage calculated by BedTools multicov, filtered for alignment length",
+       subtitle="Number in cells is the detected count - true count\n Color shows sign and magnitute fo difference ",
+       fill="Relative difference")
+
+
+```

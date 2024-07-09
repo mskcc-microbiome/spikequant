@@ -77,6 +77,7 @@ rrna_depletion <- read.csv("benchmarking/spikes/rrna_masking.bed", sep="\t", hea
 tmp2 <- read.csv("benchmarking/v2/all_coverage.tsv", sep="\t")  %>% 
   rename(rawsample=sample) %>%
   mutate(
+    rep=gsub("(.*?)_.*quanttype(.*)$", "\\1", rawsample),
     quantref=gsub(".*quanttype(.*)$", "\\1", rawsample),
     sample=gsub("(.*?)_offtarget.*", "\\1", rawsample),
     dbtype=gsub("(.*?)_offtarget(.*?)_.*", "\\2", rawsample),
@@ -92,12 +93,17 @@ tmp2 <- read.csv("benchmarking/v2/all_coverage.tsv", sep="\t")  %>%
   left_join(rrna_depletion) %>% 
   mutate(adjusted_length = ifelse(is.na(total_rrna_length), Length, Length-total_rrna_length)) %>%
   mutate(counts = (Read_Count * (full_genome/100000))/(adjusted_length/100000)) %>% 
-  select(sample, dbtype, quantref, aligner, is_spike, target, Genome, Length, genome_base, full_genome, Read_Count, counts, true_count, total,adjusted_length) %>% 
+  select(rep, sample, dbtype, quantref, aligner, is_spike, target, Genome, Length, genome_base, full_genome, Read_Count, counts, true_count, total,adjusted_length) %>% 
   mutate(count_deviation_percent = (counts-true_count)/(true_count)) %>% 
-  mutate(count_percent = true_count/counts)
+  mutate(count_percent = (true_count) /counts,
+         count_diff = counts - true_count,
+         count_percent = ifelse(count_diff == 0, 1, 
+                                ifelse(counts>1 & true_count == 0, 1.2, count_percent))) %>% 
+  filter(is_spike)
 
 if (interactive()){
 View(tmp2 %>% filter(is_spike) %>% filter(grepl("1_depth10000000_spike0.00000", sample), aligner == "bwa-mem", dbtype=="bins"))
+View(tmp2 %>% filter(is_spike) %>% filter(grepl("1_depth10000000_spike0.10000", sample), aligner == "bwa-mem", dbtype=="bins"))
 View(tmp2 %>% filter(is_spike) %>% filter(grepl("1_depth10000000_spike0.10000", sample), aligner == "bwa-mem", dbtype=="bins"))
 }
 (new <-ggplot(tmp2 %>% filter(is_spike) %>%
@@ -155,9 +161,80 @@ ggplot(tmp2 %>% filter(is_spike) %>%
   facet_grid( aligner ~  target, scales="free") + 
   theme(axis.text.x = element_text(angle=45, hjust=1)) + scale_color_brewer(palette = "Paired")  
 
-ggplot(tmp2 %>% filter(is_spike) %>% filter(target > 0), aes(y=target, x=counts_perc, color=dbtype)) +
-  geom_jitter(width=0) + 
-  facet_grid(~ genome_base, scales="free", space = "free") + 
+# if columns show the target and the organism
+# scale across replicate, sligner quant ref, and dbtype
+data_heat_summary <- tmp2 %>%
+  filter(is_spike) %>% 
+  group_by(sample, aligner,quantref, dbtype) %>%
+  summarize(mx = max(count_diff), mn = min(count_diff),
+            divby0 = (mx-mn) == 0) 
+
+tmp2 %>% 
+  filter(is_spike) %>% 
+  inner_join(data_heat_summary) %>%
+  mutate(p = (count_diff - mn ) / (mx - mn)) %>%
+  ggplot(aes(x = genome_base, y = interaction(quantref, aligner, dbtype))) + 
+  geom_tile(aes(fill = p), colour = "black") + 
+  scale_fill_gradient2() + 
+  facet_grid(aligner ~  target, space="free") +
   theme(axis.text.x = element_text(angle=45, hjust=1)) 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) +  geom_text(aes(label = count_diff)) 
+
+  # here we only scale within a target type
+data_heat_summary <- tmp2 %>%
+  filter(is_spike) %>% 
+  group_by(target, rep, genome_base) %>%
+  summarize(mx = max(count_diff), mn = min(count_diff),
+            divby0 = (mx-mn) == 0) 
+
+tmp2 %>% 
+  filter(rep==1) %>% 
+  filter(is_spike) %>% 
+  inner_join(data_heat_summary) %>%
+  mutate(p = 2 * ((count_diff - mn ) / (mx - mn)) - 1) %>% # doesn't keep 0 in center
+  mutate(p =  ifelse(count_diff < 0 , -count_diff[count_diff<0]/mn, count_diff[count_diff>=0]/mx  )) %>%
+  ggplot(aes(x = interaction(rep , genome_base ), y = interaction(aligner, dbtype, quantref))) + 
+  geom_tile(aes(fill = p), colour = "black") + 
+  scale_fill_gradient2() + 
+  facet_grid( ~  target, space="free") +
+  theme(axis.text.x = element_text(angle=90, hjust=1))  +
+  geom_text(aes(label = round(count_diff))) 
+
+data_heat_summary <- tmp2 %>%
+  filter(is_spike) %>% 
+  group_by(target, genome_base, rep) %>%
+  summarize(mx = max(count_diff), mn = min(count_diff)) 
+
+tmp2 %>% 
+  inner_join(data_heat_summary) %>%
+  mutate(p = ((count_diff - mn ) / (mx - mn)) * sign(count_diff)) %>% 
+  ggplot(aes(x = interaction(rep, aligner), y = interaction( dbtype, quantref))) + 
+  geom_tile(aes(fill = p), colour = "black") + 
+  scale_fill_gradient2() + 
+  facet_grid(genome_base ~  target, space="free") +
+  theme(axis.text.x = element_text(angle=90, hjust=1))  +
+  geom_text(aes(label = round(count_diff))) + 
+  coord_flip() + 
+  labs(title="No major differences by aligner")
+
+
+data_heat_summary <- tmp2 %>%
+  filter(is_spike) %>% 
+  filter(aligner == "bwa-mem") %>% 
+  group_by(target, genome_base) %>%
+  summarize(mx = max(count_diff), mn = min(count_diff)) 
+
+tmp2 %>% 
+  filter(aligner == "bwa-mem") %>% 
+  inner_join(data_heat_summary) %>%
+  mutate(p = ((count_diff - mn ) / (mx - mn)) * sign(count_diff)) %>% 
+  ggplot(aes(y = interaction(rep, dbtype ), x = interaction(quantref))) + 
+  geom_tile(aes(fill = p), colour = "black") + 
+  scale_fill_gradient2(low = "#435F44", mid = "white", high = "firebrick") + 
+  facet_grid(genome_base ~  target, space="free") +
+  theme(axis.text.x = element_text(angle=90, hjust=1))  +
+  geom_text(aes(label = round(count_diff))) +
+  labs(x="Quantification Region", y = "Replicate and Alignment off-target database",
+       title="Version2: filtered alignments")
 
 ```
