@@ -1,0 +1,38 @@
+---
+title: "Quantifying and depleting organism spikes in microbiome data with mgx-spikequant"
+abstract:
+---
+
+```{R}
+toolname = "mgxspikequant"
+msqd
+masquerade
+
+```
+# Introduction
+Microbiome data is compositional.  
+Log-ratio techniques solve the relative abundance issue, but the manitude of changes is valuable.  
+Biases can also exist at the extraction level, and even between kingdoms.
+MK-SpikeSeq has been applied successfully for 16S analysis
+Quantification and depletion of spike ASVs is straightforward, but quantification and depletion of metagenomic data is not.
+mgx-spikequant  does this
+
+# Methods
+Here we describe the implementation of `r toolname` and the benchmarking that led to our recommended usage.  The workflow takes FASTQ files as input, and the genome FASTA file(s) corresponding to the spikes.  The whole genome alignment is used for the depletion process, but the quantification can optionally be performed on set regions of the genome to increase accuracy.An optional database of off-target genomes can be used during the initial alignment step to increase stringency.
+
+## Implementation
+`r toolname` is implemented in Snakemake using containerized tools, to allow easy execution across computing environments. Full documentation can be found at <URL>. The workflow proceeds as follows:
+
+- Reads are aligned to indexed spike genomes and optional off-target database with BWA-MEM or Minimap2
+- Alignment is filtered for high-quality hits using Samtools
+- Spike-origin reads are quantified with bedtools
+- Filtered alignment is used to separate spike-origin reads from sample-origin reads, outputting both as FASTQ pairs
+
+Downstream, the spike-depleted FASTQs can be analysed with any tool of interest, and the read counts can be normalized 
+## Parameters 
+
+## Data Simulation
+
+# Results and Discussion
+
+# Conclusion 

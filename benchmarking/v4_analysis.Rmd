@@ -1,0 +1,164 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+```{r}
+
+library(tidyverse)
+library(patchwork)
+theme_set(theme_bw())
+spikes <- c("Haloarcula_hispanica", "Salinibacter_ruber", "Trichoderma_reesei")
+spikes_pri <- paste0(spikes, "_primary") 
+spikes_markers <- paste0(spikes, "_markers") 
+spikes_pri_masked <- paste0(spikes, "_primary_masked") 
+
+data_summary_most <- read.csv("benchmarking/data_summary.tsv", sep="\t") %>%
+  #filter(!grepl("spike0.00000", file)) %>% 
+  mutate(
+    true_count=as.numeric(gsub(",", "", num_seqs)),
+    sample=gsub(".*?_(\\d+_depth.*?_spike.*?)_.*", "\\1", file),
+    Genome = gsub(".*?_(\\d+_depth.*?_spike.*?)_(.*).fasta.*", "\\2", file),
+    is_spike =Genome %in% c(spikes, spikes_pri)
+  ) %>% 
+  group_by(sample,is_spike, Genome) %>% 
+  summarize(true_count = sum(true_count)) %>%
+  ungroup() %>%
+  group_by(sample) %>% 
+  mutate(total = sum(true_count)) %>%
+  ungroup() %>% 
+  filter( is_spike)%>% 
+  select(sample, Genome, true_count, total) %>% 
+  distinct()
+# parse the ones lacking any spikes so we still have totals
+# the left join with the dummy data makes the merging below more straightforward
+data_summary_nospike <- read.csv("benchmarking/data_summary.tsv", sep="\t") %>% 
+  filter(grepl("spike0.00000", file)) %>% 
+  mutate(
+    true_count=as.numeric(gsub(",", "", num_seqs)),
+    sample=gsub(".*?_(\\d+_depth.*?_spike.*?)_.*", "\\1", file),
+  ) %>% 
+  group_by(sample) %>% 
+  summarize(total = sum(true_count)) %>% ungroup() %>%
+  mutate(true_count=0) %>% 
+  left_join(data.frame(true_count=rep(0, length(spikes)), Genome=spikes), relationship= "many-to-many")
+
+data_summary <- bind_rows(data_summary_most,data_summary_nospike) %>% 
+  rename("genome_base" = "Genome")
+dir.create("benchmarking/v4")
+system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/v4/all_coverage.tsv benchmarking/v4/all_coverage.tsv")
+res4 = read.csv("benchmarking/v4/all_coverage.tsv" , sep="\t", header=TRUE, col.names = c("rawsample", "spike", "len", "nreads") )%>% 
+  filter(grepl("bwa-mem", rawsample)) %>% 
+    mutate(
+      rep=gsub("(.*?)_.*quanttype(.*)$", "\\1", rawsample),
+      quantref=gsub(".*quanttype(.*)", "\\1", rawsample),
+      quantbed=gsub("(.*?)_(.*?)_(.*)", "\\3", spike ),
+      sample=gsub("(.*?)_offtarget.*", "\\1", rawsample),
+      dbtype=gsub("(.*?)_offtarget(.*?)_.*", "\\2", rawsample),
+      aligner=gsub("(.*?)_mapper(.*?)_.*", "\\2", rawsample),
+      target=as.numeric(gsub(".*_spike(.*?)_.*", "\\1", rawsample)),
+    ) %>%
+mutate(
+  nreads=as.double(nreads),
+  genome_base = gsub("(.*?)_(.*?)_.*", "\\1_\\2", spike )) %>% 
+  group_by(genome_base) %>% 
+  mutate(full_genome_length = max(len, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  left_join(data_summary, by = c("sample", "genome_base"))  %>% 
+  rowwise()%>% 
+  mutate(theoretical_total = as.double((nreads * full_genome_length) / len),
+         theoretical_total = ifelse(is.infinite(theoretical_total), 0, theoretical_total)) %>% 
+  mutate(
+  counts = theoretical_total, # for consistency with v2
+  count_percent = (true_count) /counts,
+       count_diff = counts - true_count,
+       count_percent = ifelse(count_diff == 0, 1, 
+                              ifelse(counts>1 & true_count == 0, 1.2, count_percent))) 
+
+ggplot(res4, aes(x=quantbed, y=count_percent)) +
+  geom_point() + facet_grid(target~interaction(aligner, dbtype), space="free", scales = "free")
+
+ggplot(res4 %>%
+         group_by(target, aligner) %>%
+         mutate(xint = ifelse(row_number() == 1, true_count, NA)), aes(y=dbtype, x=theoretical_total, color=quantbed)) +
+  geom_vline(aes(xintercept = xint), color = "black", linetype = "dotted") + 
+  geom_jitter(width=0) + 
+  facet_grid( genome_base ~  target, scales="free") + 
+  theme(axis.text.x = element_text(angle=45, hjust=1),plot.caption = element_text(hjust = 0)
+  ) + 
+  
+  ggplot(res %>%
+           group_by(target, aligner) %>%
+           mutate(xint = ifelse(row_number() == 1, true_count, NA)), aes(y=dbtype, x=count_percent, color=quantbed)) +
+  geom_vline(aes(xintercept = xint), color = "black", linetype = "dotted") + 
+  geom_jitter(width=0) + 
+  facet_grid( genome_base ~  target, scales="free") + 
+  theme(axis.text.x = element_text(angle=45, hjust=1),plot.caption = element_text(hjust = 0)
+  )  + plot_layout(guides = "collect")
+
+ggplot(res %>%
+                group_by(target, aligner) %>%
+                mutate(xint = ifelse(row_number() == 1, true_count, NA)), aes(y=dbtype, x=theoretical_total, color=quantbed)) +
+    geom_vline(aes(xintercept = xint), color = "black", linetype = "dotted") + 
+    geom_jitter(width=0) + 
+    facet_grid( genome_base ~  target, scales="free") + 
+    theme(axis.text.x = element_text(angle=45, hjust=1),plot.caption = element_text(hjust = 0)
+    ) 
+ggsave("tmp.pdf", width = 10, height = 8)
+
+
+ggplot(res %>%
+         filter(dbtype == "none") %>% 
+         mutate(xint = ifelse(row_number() == 1, true_count, NA)), aes(y=quantref, x=count_percent, color=quantref)) +
+  geom_jitter(width=0) + 
+  facet_grid( aligner ~  target, scales="free") + 
+  theme(axis.text.x = element_text(angle=45, hjust=1),plot.caption = element_text(hjust = 0)
+  ) 
+
+
+data_heat_summary_v4 <- res4 %>%
+  filter(aligner == "bwa-mem") %>% 
+  group_by(target, genome_base) %>%
+  summarize(mx = max(abs(count_diff)), mn = min(abs(count_diff))) 
+
+res4 %>% 
+  filter(aligner == "bwa-mem") %>% 
+  inner_join(data_heat_summary_v4) %>%
+  mutate(p = ((abs(count_diff) - mn ) / (mx - mn)) * sign(count_diff)) %>% 
+  ggplot(aes(y = interaction(rep, dbtype ), x = interaction(quantref))) + 
+  geom_tile(aes(fill = p), colour = "black") + 
+  scale_fill_gradient2(low = "#435F44", mid = "white", high = "firebrick") + 
+  facet_grid(genome_base ~  target, space="free") +
+  theme(axis.text.x = element_text(angle=90, hjust=1))  +
+  geom_text(aes(label = round(count_diff))) +
+  labs(x="Quantification Region", y = "Replicate and Alignment off-target database",
+       title="Version 3: Coverage calculated by BedTools multicov, filtered for alignment length",
+       subtitle="Number in cells is the detected count - true count\n Color shows sign and magnitute fo difference ",
+       fill="Relative difference")
+
+
+data_heat_summary_v3_nomarkers <- res %>%
+  filter(aligner == "bwa-mem") %>% 
+  filter(quantref != "markers") %>% 
+  group_by(target, genome_base) %>%
+  summarize(mx = max(abs(count_diff)), mn = min(abs(count_diff))) 
+
+
+res %>% 
+  filter(aligner == "bwa-mem") %>% 
+  filter(quantref != "markers") %>% 
+  inner_join(data_heat_summary_v3_nomarkers) %>%
+  mutate(p = ((abs(count_diff) - mn ) / (mx - mn)) * sign(count_diff)) %>% 
+  ggplot(aes(y = interaction(rep, dbtype ), x = interaction(quantref))) + 
+  geom_tile(aes(fill = p), colour = "black") + 
+  scale_fill_gradient2(low = "#435F44", mid = "white", high = "firebrick") + 
+  facet_grid(genome_base ~  target, space="free") +
+  theme(axis.text.x = element_text(angle=90, hjust=1))  +
+  geom_text(aes(label = round(count_diff))) +
+  labs(x="Quantification Region", y = "Replicate and Alignment off-target database",
+       title="Version 3: Coverage calculated by BedTools multicov, filtered for alignment length",
+       subtitle="Number in cells is the detected count - true count\n Color shows sign and magnitute fo difference ",
+       fill="Relative difference")
+
+
+```
