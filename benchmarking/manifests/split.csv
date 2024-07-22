@@ -1,6 +1,3 @@
-Trichoderma_reesei,no,/data/brinkvd/users/watersn/spikequant/benchmarking/spikes/split/Trichoderma_reesei_other.fa
-Trichoderma_reesei,yes,/data/brinkvd/users/watersn/spikequant/benchmarking/spikes/split/Trichoderma_reesei_primary.fa
-Salinibacter_ruber,no,/data/brinkvd/users/watersn/spikequant/benchmarking/spikes/split/Salinibacter_ruber_other.fa
-Salinibacter_ruber,yes,/data/brinkvd/users/watersn/spikequant/benchmarking/spikes/split/Salinibacter_ruber_primary.fa
-Haloarcula_hispanica,no,/data/brinkvd/users/watersn/spikequant/benchmarking/spikes/split/Haloarcula_hispanica_other.fa
-Haloarcula_hispanica,yes,/data/brinkvd/users/watersn/spikequant/benchmarking/spikes/split/Haloarcula_hispanica_primary.fa
+Haloarcula_hispanica,/data/brinkvd/users/watersn/spikequant/benchmarking/spikes/raw/Haloarcula_hispanica.fa,/data/brinkvd/users/watersn/spikequant/benchmarking/beds/Haloarcula_hispanica_primary.bed
+Salinibacter_ruber,/data/brinkvd/users/watersn/spikequant/benchmarking/spikes/raw/Salinibacter_ruber.fa,/data/brinkvd/users/watersn/spikequant/benchmarking/beds/Salinibacter_ruber_primary.bed
+Trichoderma_reesei,/data/brinkvd/users/watersn/spikequant/benchmarking/spikes/raw/Trichoderma_reesei.fa,/data/brinkvd/users/watersn/spikequant/benchmarking/beds/Trichoderma_reesei_primary.bed

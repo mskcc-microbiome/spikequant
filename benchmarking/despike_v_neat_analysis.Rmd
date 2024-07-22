@@ -1,0 +1,185 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Is Despiking Necessary when using Metaphlan/Humann?
+
+## The data
+Data were generated using ART <https://www.niehs.nih.gov/research/resources/software/biostatistics/art> to simulate 150bp paired HiSeq data.  The source genomes for the community were those used by Zymo for their gut microbiome mock control.  the three spikes used were those from the Multi-Kingdom spike scheme.  I generated 5 replicates (using the `seed` argument) of data under two different schemes:
+
+**Even Relative Abundance**: For this scheme I generated samples with 1x coverage of all comunity members the equal relative abundnace/coverage, and 0.1x coverage of the spike genomes.
+
+**Even number of reads**: Here I set a target depth of 10M read pairs, and set a range of total spike reads [0, .1, etc ].  That fraction of reads was split equally among the three spike organisms.
+
+In all cases, the total number of reads per organism were counted prior to concatenating the reads into a single pair of fastq files for downstream analyses.
+
+#### getting the data from cluster
+```{r}
+library(tidyverse)
+library(patchwork)
+theme_set(theme_bw())
+dir.create("tmp")
+dir.create("tmp/humann")
+dir.create("tmp/metaphlan_no_treesei")
+dir.create("tmp/humann_no_treesei")
+source("benchmarking/utils.R")
+
+system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/data_summary.tsv tmp/data_summary.tsv")
+system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/data_summary_no_treesei.tsv tmp/data_summary_no_treesei.tsv")
+
+system("rsync -am --include='*metaphlan3_profile.txt' --include='*/' --exclude='*'  lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/despike_v_neat/metaphlan/   tmp/" )
+system("rsync -am --include='*_humann3_pathabundance.tsv' --include='*/' --exclude='*'  lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/despike_v_neat/humann/   tmp/humann/")
+
+system("rsync -am --include='*metaphlan3_profile.txt' --include='*/' --exclude='*'  lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/despike_v_neat_no_treesei/metaphlan/   tmp/metaphlan_no_treesei/" )
+system("rsync -am --include='*_humann3_pathabundance.tsv' --include='*/' --exclude='*'  lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/despike_v_neat_no_treesei/humann/   tmp/humann_no_treesei/")
+
+#system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/despike_v_neat/metaphlan/1_depth10000000_spike0.10000_metaphlan3_profile.txt tmp/1_depth10000000_spike0.10000_metaphlan3_profile.txt")
+#system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/despike_v_neat/metaphlan/1_depth10000000_spike0.10000_offtargetnone_mapperminimap2-sr_quanttypemarkers_nospike_metaphlan3_profile.txt tmp/1_depth10000000_spike0.10000_offtargetnone_mapperminimap2-sr_quanttypemarkers_nospike_metaphlan3_profile.txt")
+#system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/despike_v_neat/humann/1_evencoverage0.10000_humann3_genefamilies.tsv tmp/1_evencoverage0.10000_humann3_genefamilies.tsv")
+#system("scp lilac:/data/brinkvd/users/watersn/spikequant/benchmarking/despike_v_neat/humann/1_evencoverage0.10000_offtargetnone_mapperminimap2-sr_quanttyperrnamasked_nospike_humann3_genefamilies.tsv tmp/1_evencoverage0.10000_offtargetnone_mapperminimap2-sr_quanttyperrnamasked_nospike_humann3_genefamilies.tsv")
+
+parse_paths = function(df, suffix){
+  df %>% 
+    filter(grepl("evencoverage",path)) %>% 
+    mutate(
+      simdata = ifelse(grepl("no_treesei", path), "no_treesei", "all_spikes"),
+      sample=gsub(paste0("(\\d+_depth.*?_spike.*?)_", suffix), "\\1", basename(path)),
+      sample=gsub(paste0("(\\d+_evencoverage.*?)_", suffix), "\\1", sample),
+      sample=paste0(simdata, "--", sample),
+      samplebase=gsub("(.*)_offtarget.*", "\\1", sample),
+      covtype = case_when(
+        grepl("evencoverage", sample) ~ "evencoverage",
+        grepl("depth", sample) ~ "evenreads",
+        TRUE ~ "help"
+      ),
+      spikefcov = suppressWarnings(as.numeric(gsub(".*_evencoverage(.*)", "\\1", samplebase))), # we want these NAs!,
+      sample_type = ifelse(sample == samplebase, "undepleted", "despiked"),
+      approach = ifelse(sample_type == "undepleted", "undepleted",
+                        gsub(".*offtarget(.*?)_mapper(.*?)_quanttype(.*?)_.*", "\\1--\\2--\\3", sample)),
+      approach = ifelse(spikefcov == 0 & sample_type == "undepleted", "nospike-target", approach)
+    )
+      
+}
+(metaphlan_metadata <- data.frame(path=dir("tmp/",recursive = T, pattern="metaphlan3_profile.txt", full.names = TRUE)) %>% 
+    parse_paths(suffix = "metaphlan3_profile.txt")
+)
+    
+(pathway_metadata <- data.frame(path=dir("tmp/", recursive = T, pattern="pathabundance.tsv", full.names = TRUE)) %>% 
+    parse_paths(suffix = "humann3_pathabundance.tsv")
+)    
+
+metaphlan <- purrr::map(metaphlan_metadata$path, .f = function(x){
+  read.csv(x, sep="\t", skip=6, row.names = NULL) %>% janitor::clean_names() %>% filter (!grepl("t__", x_clade_name)) %>%
+  mutate(path=x)
+}) %>% bind_rows() %>% 
+  left_join(metaphlan_metadata, by="path") 
+pathways <- purrr::map(pathway_metadata$path, .f = function(x){
+  read.csv(x, sep="\t", row.names = NULL) %>% janitor::clean_names() %>%
+  mutate(path=x) %>% 
+    rename ("abundance"=2)
+}) %>% bind_rows() %>% 
+  left_join(pathway_metadata, by="path")  %>% 
+  select(-path) %>% 
+      filter(covtype == "evencoverage") 
+
+pathwaysw <- pathways %>% 
+  select(1:2, sample) %>% 
+  pivot_wider(id_cols = x_pathway, names_from = sample, values_from = "abundance", values_fill = 0)
+
+
+if(dir.exists("tmp/Maaslin_pathways")) system("rm -r tmp/Maaslin_pathways")
+if(dir.exists("tmp/Maaslin_pathways")) system("rm -r tmp/Maaslin_pathways_unclassified")
+all_pathway_results <- Maaslin2::Maaslin2(
+  output = "tmp/Maaslin_pathways", fixed_effects = c("fcov", "approach"), reference = "approach,nospike-target",
+  input_data = pathwaysw %>% 
+    filter(!grepl("Salinibacter", x_pathway)) %>% 
+    filter(!grepl("Haloarcula", x_pathway)) %>% 
+    column_to_rownames("x_pathway") %>% t(),
+  
+  input_metadata = pathway_metadata %>% column_to_rownames("sample") %>% 
+    filter(covtype == "evencoverage")
+  )
+filtered_pathway_result <- Maaslin2::Maaslin2(
+  input_data = pathwaysw %>% 
+    filter(!grepl("Salinibacter", x_pathway)) %>% 
+    filter(!grepl("Haloarcula", x_pathway)) %>% 
+    filter(!grepl("unclassified$", x_pathway)) %>% 
+    column_to_rownames("x_pathway") %>% t(),
+  input_metadata = pathway_metadata %>% column_to_rownames("sample") %>% 
+    filter(covtype == "evencoverage"),
+  output = "tmp/Maaslin_pathways_unclassified", fixed_effects = c("fcov", "approach"), reference = "approach,nospike-target"
+  )
+
+path_dists <- pathwaysw %>% 
+  filter(!grepl("Salinibacter", x_pathway)) %>% 
+  filter(!grepl("Haloarcula", x_pathway)) %>% 
+  slice(-c(1:2)) %>%
+  column_to_rownames("x_pathway") %>%
+  select(grep("no_treesei", colnames(.))) %>% 
+  t() %>% 
+  vegan::vegdist()
+path_pcoa <- cmdscale(path_dists)
+data.frame(path_pcoa) %>% rownames_to_column("sample") %>% left_join(pathway_metadata) %>%
+  ggplot(aes(x=X1, y=X2, color=approach, shape=as.factor(spikefcov))) + 
+  geom_point(alpha=.7)  + 
+  facet_wrap (~simdata)
+
+
+spikes <- c("Haloarcula_hispanica", "Salinibacter_ruber", "Trichoderma_reesei")
+spikes_pri <- paste0(spikes, "_primary") 
+metaphlan_s <- metaphlan %>% 
+  filter(grepl("s__", x_clade_name)) %>% 
+  mutate(species = gsub(".*s__", "", x_clade_name)) %>% 
+  group_by(path) %>% 
+  mutate(tmp = ifelse(species %in% spikes, 0, relative_abundance),
+         nospike_relab = tmp/sum(tmp),
+         withspike_relab = relative_abundance/sum(relative_abundance)) %>%
+  select(-tmp) %>%
+  ungroup() %>% 
+  filter(covtype == "evencoverage") 
+
+# first, lets correct for the multiple E. coli species, 
+# then subset to evencoverage samples for easy math
+# and calcualted the organism relative abundnace
+speciesdatasummary <- bind_rows(
+  parse_data_summary("tmp/data_summary.tsv") %>% mutate(sample = paste0("all_spikes--", sample)) ,
+  parse_data_summary("tmp/data_summary_no_treesei.tsv") %>% mutate(sample = paste0("no_treesei--", sample)),
+)%>% 
+  mutate(species = gsub("(.*?_.*?)_.*", "\\1", genome_base)) %>% 
+  filter(grepl("evencoverage", sample)) %>% 
+   group_by(sample) %>% 
+  mutate(
+    sim_fcov = ifelse(is_spike, as.numeric(gsub(".*evencoverage(.*)$", "\\1", sample)), 1),
+    true_relab = sim_fcov/sum(sim_fcov)
+    ) %>% 
+  group_by(sample, is_spike, species) %>%
+  summarize(
+    true_count = sum(true_count),
+    true_relab = sum(true_relab)) %>% 
+  ungroup() %>%
+  mutate(species = ifelse(species == "Lactobacillus_fermentum", "Limosilactobacillus_fermentum", species))
+
+pdata_metaphlan <- left_join(metaphlan_s, speciesdatasummary,  by = c("samplebase"="sample", "species")) 
+pdata_metaphlan  %>% 
+  filter(simdata == "no_treesei") %>% 
+  ggplot(aes(y=species, x=nospike_relab)) + 
+  geom_point(aes(y=species, x=true_relab), color = "black", alpha=.7, size=1) + 
+  geom_point(aes(color=approach, shape=approach), alpha=.7, size=2) + 
+  facet_grid(~spikefcov) + 
+  theme(legend.position = "right")
+  
+pdata_metaphlan  %>% 
+  ggplot(aes(y=approach, x=nospike_relab)) + 
+  geom_point(aes(y=approach, x=true_relab), color = "black", alpha=.7, size=1) + 
+  geom_point(aes(color=approach, shape=approach), alpha=.7, size=2) + 
+  facet_grid(spikefcov~species, scales="free") + 
+  theme(legend.position = "none", axis.text.x = element_text(angle=45, hjust=1))
+   
+
+
+
+
+
+```
