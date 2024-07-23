@@ -1,5 +1,5 @@
 # Generating Full Benchmark simulated dataset
-A yaml config file is used to define the number of replicates the test data workflow generates, the total depth, and the proportion of the spikes in the sample.
+A yaml config file is used to define the number of replicates the test data workflow generates, the total depth, and the proportion of the spikes in the sample. For benchmarking downstream taxonomic profiling, we generated test data with and without the T. reesi spike.
 
 ```
 snakemake --snakefile testdata/Snakefile --directory $PWD/benchmarking/data/ --configfile benchmarking/benchmarking_sim_data_config.yaml
@@ -115,8 +115,12 @@ ls benchmarking/v3/*/coverm/*.tsv | grep -v "mqc" | grep "Salini\|Haloa" | while
 # Benchmarking performance against undepleted samples
 ```
 find  $PWD/benchmarking/v5/ -name "*_R1.fastq.gz" | grep offtargetnone_mapperminimap2 | grep nospike | grep evencoverage > benchmarking/v5/manifest_R1 && \
-find  $PWD/benchmarking/v5_no_treesei/ -name "*_R1.fastq.gz" | grep offtargetnone_mapperminimap2 | grep nospike | grep evencoverage >> benchmarking/v5/manifest_R1 && \
 find $PWD/benchmarking/data/ -name "*_R1.fastq.gz"  >> benchmarking/v5/manifest_R1
 
-snakemake --snakefile benchmarking/despiked_vs_neat_analysis.smk --directory benchmarking/despike_v_neat/  --config metaphlan_db=/data/brinkvd/resources/dbs/metaphlan/mpa_vJun23_CHOCOPhlAnSGB_202403/ docker_biobakery=docker://ghcr.io/vdblab/biobakery-profiler:20240513a choco_db=/data/brinkvd/resources/dbs/chocophlan/v201901_v31/ uniref90_db=/data/brinkvd/resources/dbs/uniref90_diamond/v201901b/
+find  $PWD/benchmarking/v5_no_treesei/ -name "*_R1.fastq.gz" | grep offtargetnone_mapperminimap2 | grep nospike | grep evencoverage > benchmarking/v5/manifest_R1_no_treesei
+find $PWD/benchmarking/data_no_treesei/ -name "*_R1.fastq.gz"  >> benchmarking/v5/manifest_R1_no_treesei
+
+snakemake --snakefile benchmarking/despiked_vs_neat_analysis.smk --directory benchmarking/despike_v_neat/  --config metaphlan_db=/data/brinkvd/resources/dbs/metaphlan/mpa_vJun23_CHOCOPhlAnSGB_202403/ docker_biobakery=docker://ghcr.io/vdblab/biobakery-profiler:20240513a choco_db=/data/brinkvd/resources/dbs/chocophlan/v201901_v31/ uniref90_db=/data/brinkvd/resources/dbs/uniref90_diamond/v201901b/ manifest=$PWD/benchmarking/v5/manifest_R1
+snakemake --snakefile benchmarking/despiked_vs_neat_analysis.smk --directory benchmarking/despike_v_neat_no_treesei/  \
+    --config metaphlan_db=/data/brinkvd/resources/dbs/metaphlan/mpa_vJun23_CHOCOPhlAnSGB_202403/ docker_biobakery=docker://ghcr.io/vdblab/biobakery-profiler:20240513a choco_db=/data/brinkvd/resources/dbs/chocophlan/v201901_v31/ uniref90_db=/data/brinkvd/resources/dbs/uniref90_diamond/v201901b/ manifest=$PWD/benchmarking/v5/manifest_R1_no_treesei
 ```
