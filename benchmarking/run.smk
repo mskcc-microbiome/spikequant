@@ -87,6 +87,8 @@ wildcard_constraints:
 rule all:
     input:
         f"all_coverage.tsv",
+        f"all_spike_counts.tsv",
+        f"all_nospike_counts.tsv",
 
 def get_sample_base(sample):
     """ sample_base is the part of the sample name relevant to data generation,
@@ -125,6 +127,10 @@ rule run_benchmarking_pipeline:
         spiketable=get_spiketable_from_sample,
     output:
         counts="{sample}/{sample}.spike_reads.tsv",
+        r1="{sample}/{sample}_nospike_R1.fastq.gz",
+        r2="{sample}/{sample}_nospike_R2.fastq.gz",
+        r1spike="{sample}/{sample}_spike_R1.fastq.gz",
+        r2spike="{sample}/{sample}_spike_R2.fastq.gz",
     params:
         offtarget=get_offtarget_from_sample,
         profile=profile,
@@ -151,6 +157,51 @@ rule tabulate:
     base=$( basename $rep  | sed "s|.spike_reads.tsv||g")
     cat $rep | sed "s|^|${{base}}\t|g" >> {output[0]}
     done
+    """
+
+rule count_missed_spikes:
+    input:
+        r1="{sample}/{sample}_nospike_R1.fastq.gz",
+        r2="{sample}/{sample}_nospike_R2.fastq.gz",
+    output:
+        counts = "{sample}/{sample}_nospike_counts"
+    params:
+        tag="nospike"
+    shell: """
+    # try to catch empty gz fastq
+    if [ -n "$(gunzip < {input.r1} | head -c 1 | tr '\\0\\n' __)" ]; then
+        zcat  {input.r1} | grep "@" | cut -f1 -d- | uniq -c | sed 's|^|{wildcards.sample}\tR1\t{params.tag}\t|g' > {output.counts}
+        zcat  {input.r2} | grep "@" | cut -f1 -d- | uniq -c | sed 's|^|{wildcards.sample}\tR2\t{params.tag}\t|g' >> {output.counts}
+    else
+        echo -e "{wildcards.sample}\tR1\tnospike\t0\tempty\n{wildcards.sample}\tR2\tnospike\t0\tempty" > {output.counts}
+    fi
+    """
+
+use rule count_missed_spikes as count_false_spikes with:
+    input:
+        r1="{sample}/{sample}_spike_R1.fastq.gz",
+        r2="{sample}/{sample}_spike_R2.fastq.gz",
+    output:
+        counts = "{sample}/{sample}_spike_counts"
+    params:
+        tag="spike"
+
+rule aggregate_missed_spikes:
+    input:
+        counts=expand("{sample}/{sample}_nospike_counts", sample=samples),
+    output:
+        f"all_nospike_counts.tsv"
+    shell:"""
+    cat {input} > {output}
+    """
+
+rule aggregate_false_counts:
+    input:
+        counts=expand("{sample}/{sample}_spike_counts", sample=samples),
+    output:
+        f"all_spike_counts.tsv"
+    shell:"""
+    cat {input} > {output}
     """
 
 

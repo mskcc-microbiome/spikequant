@@ -1509,8 +1509,6 @@ tmp_5_depth10000000_spike1.00000_Trichoderma_reesei.fasta_R1.fq	FASTQ	DNA	3,325,
 tmp_5_depth10000000_spike1.00000_Trichoderma_reesei.fasta_R2.fq	FASTQ	DNA	3,325,640	498,846,000	150	150	150
 5_depth10000000_spike1.00000_R1.fastq.gz	FASTQ	DNA	9,992,306	1,498,845,900	150	150	150
 5_depth10000000_spike1.00000_R2.fastq.gz	FASTQ	DNA	9,992,306	1,498,845,900	150	150	150
-=======
->>>>>>> 8342545d59b0ec1680aeab02a3fe260693e07560
 tmp_1_evencoverage0.00000_Akkermansia_muciniphila.fasta_R1.fq	FASTQ	DNA	9,505	1,425,750	150	150	150
 tmp_1_evencoverage0.00000_Akkermansia_muciniphila.fasta_R2.fq	FASTQ	DNA	9,505	1,425,750	150	150	150
 tmp_1_evencoverage0.00000_Bacteroides_fragilis.fasta_R1.fq	FASTQ	DNA	17,223	2,583,450	150	150	150
@@ -1811,7 +1809,6 @@ tmp_1_evencoverage5.00000_Veillonella_rogosae.fasta_R1.fq	FASTQ	DNA	7,193	1,078,
 tmp_1_evencoverage5.00000_Veillonella_rogosae.fasta_R2.fq	FASTQ	DNA	7,193	1,078,950	150	150	150
 1_evencoverage5.00000_R1.fastq.gz	FASTQ	DNA	989,970	148,495,500	150	150	150
 1_evencoverage5.00000_R2.fastq.gz	FASTQ	DNA	989,970	148,495,500	150	150	150
-<<<<<<< HEAD
 tmp_2_evencoverage0.00000_Akkermansia_muciniphila.fasta_R1.fq	FASTQ	DNA	9,505	1,425,750	150	150	150
 tmp_2_evencoverage0.00000_Akkermansia_muciniphila.fasta_R2.fq	FASTQ	DNA	9,505	1,425,750	150	150	150
 tmp_2_evencoverage0.00000_Bacteroides_fragilis.fasta_R1.fq	FASTQ	DNA	17,223	2,583,450	150	150	150
