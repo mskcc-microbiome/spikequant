@@ -260,6 +260,8 @@ if config["mapper"] == "bwa-mem":
             sort_order="coordinate",  # Can be 'coordinate' (default) or 'queryname'.
     #        sort_extra="",  # Extra args for samtools/picard sorts.
         threads: 32
+        resources:
+            runtime=lambda wc, attempt: 3 * 60 * attempt
         container:
             "docker://staphb/bwa:0.7.18"
         shell:"""
@@ -275,6 +277,8 @@ elif config["mapper"] == "bowtie2":
             bam=os.path.join('{sample}_bams/{sample}.bam'),
         container:"docker://staphb/bowtie2:2.5.3"
         threads: 32
+        resources:
+            runtime=lambda wc, attempt: 3 * 60 * attempt
         shell:"""
         bowtie2-build --threads {threads} {input.dbbase} {input.dbbase}
         bowtie2 --threads {threads} -x {input.dbbase} -1 {input.reads[0]} -2 {input.reads[0]}  --very-sensitive --no-discordant > {output.bam}
@@ -290,6 +294,8 @@ else:
         log:
             "logs/minimap2/{sample}.log",
         threads: 32
+        resources:
+            runtime=lambda wc, attempt: 3 * 60 * attempt
         container:
             "docker://staphb/minimap2:2.28"
         shell:"""
