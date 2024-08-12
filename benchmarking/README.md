@@ -3,7 +3,7 @@ A yaml config file is used to define the number of replicates the test data work
 
 ```
 snakemake --snakefile testdata/Snakefile --directory $PWD/benchmarking/data/ --configfile benchmarking/benchmarking_sim_data_config.yaml
-snakemake --snakefile testdata/Snakefile --directory $PWD/benchmarking/data_no_treesei/ --configfile benchmarking/benchmarking_sim_data_config.yaml  --config exclude_t_reesei=true total_spike_fractions=[0] reps=[1]
+snakemake --snakefile testdata/Snakefile --directory $PWD/benchmarking/data_no_treesei/ --configfile benchmarking/benchmarking_sim_data_no_treesei_config.yaml
 
 head -n 1 benchmarking/data/1_depth10000000_spike0.10000.statsfastq |  tr -s " " "\t" > benchmarking/data_summary.tsv && \
   cat benchmarking/data/*_depth*_spike*.statsfastq | grep -v num_seqs |  tr -s " " "\t" >> benchmarking/data_summary.tsv &&  \

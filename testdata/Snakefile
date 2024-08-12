@@ -9,6 +9,9 @@ from pathlib import Path
 configfile: os.path.join(str(workflow.current_basedir), "config.yaml")
 
 # this formats the fractions to strings so we don't have annoying outputs with sci notation or bad 0 padding
+print(config["total_spike_fractions"])
+config["total_spike_fractions"] = [float(x) for x in config["total_spike_fractions"]]
+config["even_coverages"] = [float(x) for x in config["even_coverages"]]
 total_spike_fractions =  [f"{frac:.5f}" for frac in config["total_spike_fractions"]]
 even_coverages =  [f"{frac:.5f}" for frac in config["even_coverages"]]
 
@@ -90,17 +93,16 @@ all_results = [
     evenspike_stats,
     evenassemblies,
     assemblies,
-    binstats,
-    evenbinstats,
-    refined_stats_even,
     # "clean.done"
 ]
-
 # only bother attempting to refine the bins if we have at least 10m reads
-if min(total_depths) >= 10000000:
+if min(total_depths) >= 10000000 and not config["skip_binning"]:
     all_results.extend([
         refined_stats,
+        binstats,
         refined_binstats_each,
+        evenbinstats,
+        refined_stats_even,
     ])
 
 rule all:

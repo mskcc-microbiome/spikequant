@@ -295,7 +295,8 @@ else:
             "logs/minimap2/{sample}.log",
         threads: 32
         resources:
-            runtime=lambda wc, attempt: 3 * 60 * attempt
+            runtime=lambda wc, attempt: 6 * 60 * attempt,
+            mem_mb = 16 * 1024,
         container:
             "docker://staphb/minimap2:2.28"
         shell:"""
@@ -366,7 +367,7 @@ rule run_bed_based_coverage_calculations:
 
 rule agg:
     input:
-        tsv = expand("{{sample}}_bed{bed}.tsv", bed=beds.keys())
+        tsv = expand("{{sample}}_bed{bed}.tsv", bed=list(beds.keys())+ ["total"])
     output:
         "{sample}.spike_reads.tsv",
     shell: """
@@ -422,8 +423,10 @@ rule get_despike_stats:
         spikeR2="{sample}_spike_R2.fastq.gz",
     output:
         stats="{sample}.stats",
+        total="{sample}_bedtotal.tsv",
     threads: 4
     container: "docker://ghcr.io/vdblab/seqkit:2.3.1"
     shell:"""
-    seqkit stats {input} > {output.stats}
+    seqkit stats --tabular {input} > {output.stats}
+    cat {output.stats} | tail -n+2 | awk '{{sum+=$4;}} END {{print "nonspike" "\t"  "0" "\t" sum;}}' > {output.total}
     """
