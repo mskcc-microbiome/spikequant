@@ -9,12 +9,15 @@ from io import StringIO
 import pandas as  pd
 
 #mappers = ["minimap2-sr", "bwa-mem", "bowtie2"]
-mappers = ["minimap2-sr", "bwa-mem"]
+#mappers = ["minimap2-sr", "bwa-mem"]
 zymo = config["zymo_genomes"]
-#offtargets = ["none", "zymo", "assembly", "bins"]
 
 offtargets = ["none", "zymo", "assembly"]
-# make this a dict for easier lookup
+offtargets = config["offtargets"]
+mappers = config["mappers"]
+
+
+
 spike_manifests = {os.path.splitext(os.path.basename(x))[0]: x for x in config["spike_manifests"]}
 
 
@@ -36,15 +39,13 @@ manif_base = expand("{rep}_{cov}",
                     cov=covtypes
                     )
 
-sample_bases = expand("{manif_base}_offtarget{offtarget}_mapper{mapper}",
-                 manif_base = manif_base,
-                 offtarget = offtargets,
-                 mapper=mappers)
 
-samples = expand("{manif_base}_offtarget{offtarget}_mapper{mapper}_quanttype{quanttype}",
+samples = expand("{manif_base}_offtarget{offtarget}_mapper{mapper}_quanttype{quanttype}_len{lengththresh}_pctid{pctidthresh}",
                  manif_base = manif_base,
                  offtarget = offtargets,
                  mapper=mappers,
+                 lengththresh = config["length_thresholds"],
+                 pctidthresh = config["pctid_thresholds"],
                  quanttype=spike_manifests.keys())
 
 pathbase=config["benchmarkdata"]
@@ -117,6 +118,11 @@ def get_spiketable_from_sample(wildcards):
 def get_mapper_from_sample(wildcards):
      return wildcards.sample.split("mapper")[1].split("_")[0]
 
+def get_length_threshold_from_sample(wildcards):
+     return wildcards.sample.split("len")[1].split("_")[0]
+def get_pctid_threshold_from_sample(wildcards):
+     return wildcards.sample.split("pctid")[1].split("_")[0]
+
 rule run_benchmarking_pipeline:
     # same as in main pipeline, the offtarget is given as a param so it can be
     # optional when specified as "none"
@@ -135,6 +141,8 @@ rule run_benchmarking_pipeline:
         offtarget=get_offtarget_from_sample,
         profile=profile,
         mapper=get_mapper_from_sample,
+        lenthresh = get_length_threshold_from_sample,
+        pctidthresh = get_pctid_threshold_from_sample,
         workflow_dir=workflow.current_basedir,
     resources:
         walltime=5*60
@@ -142,6 +150,7 @@ rule run_benchmarking_pipeline:
     export SNAKEMAKE_PROFILE={params.profile}
     snakemake --snakefile {params.workflow_dir}/../workflow/Snakefile --directory {wildcards.sample}/ --config R1=[{input.R1s}] \
     R2=[{input.R2s}] offtarget={params.offtarget} mapper={params.mapper} spiketable={input.spiketable} sample={wildcards.sample} \
+    pctid_threshold={params.pctidthresh} length_threshold={params.lenthresh} \
     --rerun-incomplete
     """
 

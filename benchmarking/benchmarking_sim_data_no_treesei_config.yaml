@@ -3,6 +3,8 @@ total_depths:
  - 10000000
 reps: [1,2,3,4,5]
 even_coverages:  [0, 0.01, .1, .5, 1, 5, 10, 20]
+length_thresholds: [0.97]
+pctid_thresholds: [0.97]
 exclude_t_reesei: true
 skip_binning: True
 docker_spades: "docker://staphb/spades:3.15.4"

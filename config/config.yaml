@@ -5,7 +5,9 @@ offtarget: "../testdata/data/metawrap/rawbinning_1_depth100000_spike0.10000/conc
 mapper: minimap2-sr
 offtarget: None
 sample: "testsample"
-# references
+pctid_threshold: 0.97
+length_threshold: 0.97
 
+# references
 checkm_db: "/data/brinkvd/resources/dbs/checkm/2015_01_16/"
 docker_coverm: "docker://ghcr.io/vdblab/coverm:0.6.1"

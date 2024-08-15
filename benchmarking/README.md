@@ -100,16 +100,11 @@ Haloarcula_hispanica,yes,$PWD/benchmarking/spikes/split/Haloarcula_hispanica_pri
 ## Executing the Benchmarking dataset
 
 ```
-snakemake  --snakefile benchmarking/run.smk --directory $PWD/benchmarking/v5/ --config benchmarkdata=$PWD/benchmarking/data/ spike_manifests=[$PWD/benchmarking/manifests/raw.csv,$PWD/benchmarking/manifests/rrnamasked.csv,$PWD/benchmarking/manifests/split.csv,$PWD/benchmarking/manifests/markers.csv] testdata_config=$PWD/benchmarking/benchmarking_sim_data_config.yaml zymo_genomes=$PWD/D6331.refseq/genomes/ --keep-going  --rerun-triggers mtime -f all_coverage.tsv  --rerun-incomplete
+snakemake  --snakefile benchmarking/run.smk --directory $PWD/benchmarking/v5/ --config benchmarkdata=$PWD/benchmarking/data/ spike_manifests=[$PWD/benchmarking/manifests/raw.csv,$PWD/benchmarking/manifests/rrnamasked.csv,$PWD/benchmarking/manifests/split.csv,$PWD/benchmarking/manifests/markers.csv] testdata_config=$PWD/benchmarking/benchmarking_sim_data_config.yaml zymo_genomes=$PWD/D6331.refseq/genomes/ length_thresholds=[.97] pctid_thresholds=[.97] --keep-going  --rerun-triggers mtime -f all_coverage.tsv  --rerun-incomplete
 
-snakemake  --snakefile benchmarking/run.smk --directory $PWD/benchmarking/v5_no_treesei/ --config benchmarkdata=$PWD/benchmarking/data_no_treesei/ spike_manifests=[$PWD/benchmarking/manifests/raw.csv,$PWD/benchmarking/manifests/rrnamasked.csv,$PWD/benchmarking/manifests/split.csv,$PWD/benchmarking/manifests/markers.csv] testdata_config=$PWD/benchmarking/benchmarking_sim_data_no_treesei_config.yaml zymo_genomes=$PWD/D6331.refseq/genomes/ --keep-going  --rerun-triggers mtime -f all_coverage.tsv  --rerun-incomplete
+snakemake  --snakefile benchmarking/run.smk --directory $PWD/benchmarking/v5_no_treesei/ --config benchmarkdata=$PWD/benchmarking/data_no_treesei/ spike_manifests=[$PWD/benchmarking/manifests/raw.csv,$PWD/benchmarking/manifests/rrnamasked.csv,$PWD/benchmarking/manifests/split.csv,$PWD/benchmarking/manifests/markers.csv] testdata_config=$PWD/benchmarking/benchmarking_sim_data_no_treesei_config.yaml zymo_genomes=$PWD/D6331.refseq/genomes/ length_thresholds=[.97] pctid_thresholds=[.97] --keep-going  --rerun-triggers mtime -f all_coverage.tsv  --rerun-incomplete
 ```
 
-## TMP: aggregating the results
-```
-
-ls benchmarking/v3/*/coverm/*.tsv | grep -v "mqc" | grep "Salini\|Haloa" | while read i; do bname=$(basename $i) ; cat $i | sed "s|^|$bname\t|g"; done > benchmarking/v3_res.tsv
-```
 
 
 # Benchmarking performance against undepleted samples
@@ -121,6 +116,14 @@ find  $PWD/benchmarking/v5_no_treesei/ -name "*_R1.fastq.gz" | grep offtargetnon
 find $PWD/benchmarking/data_no_treesei/ -name "*_R1.fastq.gz"  >> benchmarking/v5/manifest_R1_no_treesei
 
 snakemake --snakefile benchmarking/despiked_vs_neat_analysis.smk --directory benchmarking/despike_v_neat/  --config metaphlan_db=/data/brinkvd/resources/dbs/metaphlan/mpa_vJun23_CHOCOPhlAnSGB_202403/ docker_biobakery=docker://ghcr.io/vdblab/biobakery-profiler:20240513a choco_db=/data/brinkvd/resources/dbs/chocophlan/v201901_v31/ uniref90_db=/data/brinkvd/resources/dbs/uniref90_diamond/v201901b/ manifest=$PWD/benchmarking/v5/manifest_R1
+
 snakemake --snakefile benchmarking/despiked_vs_neat_analysis.smk --directory benchmarking/despike_v_neat_no_treesei/  \
     --config metaphlan_db=/data/brinkvd/resources/dbs/metaphlan/mpa_vJun23_CHOCOPhlAnSGB_202403/ docker_biobakery=docker://ghcr.io/vdblab/biobakery-profiler:20240513a choco_db=/data/brinkvd/resources/dbs/chocophlan/v201901_v31/ uniref90_db=/data/brinkvd/resources/dbs/uniref90_diamond/v201901b/ manifest=$PWD/benchmarking/v5/manifest_R1_no_treesei
+```
+
+
+# Further parameter sweeps:
+```
+snakemake  --snakefile benchmarking/run.smk --directory $PWD/benchmarking/parameter_sweep/ --config benchmarkdata=$PWD/benchmarking/data/ spike_manifests=[$PWD/benchmarking/manifests/raw.csv,$PWD/benchmarking/manifests/rrnamasked.csv,$PWD/benchmarking/manifests/split.csv,$PWD/benchmarking/manifests/markers.csv] testdata_config=$PWD/benchmarking/benchmarking_sim_data_config.yaml zymo_genomes=$PWD/D6331.refseq/genomes/ mappers=["minimap2-sr"] offtargets=["none"] length_thresholds=[0.5,0.85,0.9,0.95,0.97,0.99] pctid_thresholds=[0.5,0.85,0.95,0.97,.99] --keep-going  --rerun-triggers mtime -f all_coverage.tsv  --rerun-incomplete
+
 ```
