@@ -63,8 +63,9 @@ for i in df.R2s:
 if "bins" in offtargets:
     for i in df.bindir:
         assert os.path.isdir(i), f"{i} doesn't exist"
-for i in df.assembly:
-    assert os.path.exists(i), f"{i} doesn't exist"
+if "assembly" in offtargets:
+    for i in df.assembly:
+        assert os.path.exists(i), f"{i} doesn't exist"
 
 onstart:
     print(df)

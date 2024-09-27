@@ -11,28 +11,18 @@ from snakemake.utils import validate
 configfile: os.path.join(str(workflow.current_basedir), "../config/config.yaml")
 
 
-#include: "common.smk"
 
 # ToDo change this to schema validation
 assert "spiketable" in config.keys(), "spiketable is a required config argument!"
 
-#mapper = "minimap2-sr"
-#if "mapper" in config.keys():
 if config["mapper"] == "bowtie2":
     raise ValueError("Ideal alignment parameters for bowtie2 have not been identified currently")
 
 assert config["mapper"] in ["minimap2-sr", "bwa-mem"], "aligner must be either minimap2-sr , or bwa-mem"
-#    mapper = config["mapper"]
 
 offtarget = None
 if "offtarget" in config.keys():
     offtarget = config["offtarget"]
-
-
-
-
-
-
 
 SPIKEDF = pd.read_csv(config["spiketable"], sep=",", names=['name', "path","bedpath"], header=None)
 beds = {k:v for k,v in  zip(SPIKEDF.name.tolist(), SPIKEDF.bedpath.tolist())}
@@ -44,9 +34,6 @@ for i in SPIKEDF.bedpath.tolist():
 for i in SPIKEDF.path.tolist():
     if not os.path.exists(i):
         raise ValueError(f"{i} not found")
-
-#df["sample"] = manif_base
-#df = df.set_index("sample")
 
 
 envvars:
@@ -274,7 +261,7 @@ elif config["mapper"] == "bowtie2":
             reads=[config["R1"], config["R2"]],
             dbbase="{sample}_reference.fa",
         output:
-            bam=os.path.join('{sample}_bams/{sample}.bam'),
+            bam=temp(os.path.join('{sample}_bams/{sample}.bam')),
         container:"docker://staphb/bowtie2:2.5.3"
         threads: 32
         resources:
@@ -290,7 +277,8 @@ else:
             reads=[config["R1"], config["R2"]],
             dbbase="{sample}_reference.fa",
         output:
-            bam=os.path.join('{sample}_bams/{sample}.bam'),
+            bam=temp(os.path.join('{sample}_bams/{sample}.bam')),
+            #index = temp("{sample}_reference.fa.mmi")
         log:
             "logs/minimap2/{sample}.log",
         threads: 32
@@ -302,6 +290,7 @@ else:
         shell:"""
         minimap2 -d {input.dbbase}.mmi {input.dbbase}
         minimap2 -ax sr -t {threads}  {input.dbbase}.mmi {input.reads} > {output.bam}
+        rm {input.dbbase}.mmi
         """
 
 
@@ -311,7 +300,12 @@ rule index_and_clean:
     output:
         bam="{sample}_bams/{sample}_clean.bam",
         bai="{sample}_bams/{sample}_clean.bam.bai",
+        tmpbai = temp("{sample}_bams/{sample}_clean.bam.tmp"),
+        tmpbam = temp('{sample}_bams/{sample}.bam.bam'),
     container: "docker://ghcr.io/vdblab/bowtie2:2.5.0"
+    params:
+        pctid_threshold=1 -config["pctid_threshold"],
+        length_threshold=config["length_threshold"],
     threads: 8
     shell: """
     # clean up bed names by extracting the appropriate header from alignment header,
@@ -324,8 +318,7 @@ rule index_and_clean:
     # rname == rnext should keep only concordant pairs
     # "(rlen(length(seq)) >= .97" should retain only alignments where there was greater than 97% overlap
     #  -e '[NM]/rlen <= .03' should retain only alignments where there was greater than 97% idenity
-    samtools view -bh -F 3852   {output.bam}.tmp | samtools view -bh -e "rname == rnext" | samtools view -bh -e "((rlen/length(seq)) >= .97) && ([NM]/rlen <= .03)" > {output.bam}
-    # now, we need to filter to mimic what coverm was doing: retaining only properly aligned pairs,
+    samtools view -bh -F 3852   {output.bam}.tmp | samtools view -bh -e "rname == rnext" | samtools view -bh -e "((rlen/length(seq)) >= {params.length_threshold}) && ([NM]/rlen <= {params.pctid_threshold})" > {output.bam}
     samtools index  {output.bam}
     """
 
@@ -391,6 +384,8 @@ rule get_nonspike_reads:
         R2tmp=lambda wc, output: output.R2.replace(".gz", ""),
         R1tmpspike=lambda wc, output: output.spikeR1.replace(".gz", ""),
         R2tmpspike=lambda wc, output: output.spikeR2.replace(".gz", ""),
+        pctid_threshold=1-config["pctid_threshold"],
+        length_threshold=config["length_threshold"],
     container: "docker://ghcr.io/vdblab/bowtie2:2.5.0"
     shell:"""
     set -eoux pipefail
@@ -398,7 +393,7 @@ rule get_nonspike_reads:
     samtools view -H  {input.bam} | grep "Salinibacter\|Trichoderma\|Haloarcula" | cut -f 2,3 | sed "s|SN:||g" | sed "s|LN:|1\t|g" | sort -k1,1 -k2,2n > {output.bed}
 
     # inspired by https://www.biostars.org/p/473204/
-    samtools view -L {output.bed} -F 3852 -e "rname == rnext && ((rlen/length(seq)) >= .97) && ([NM]/rlen <= .03)"  -U unsorted_{output.nonspike} -o tmp_unsorted_spikes_{wildcards.sample}.bam -@ {threads} {input.bam}
+    samtools view -L {output.bed} -F 3852 -e "rname == rnext && ((rlen/length(seq)) >= {params.length_threshold}) && ([NM]/rlen <= {params.pctid_threshold})"  -U unsorted_{output.nonspike} -o tmp_unsorted_spikes_{wildcards.sample}.bam -@ {threads} {input.bam}
     # make sure you NAME-sort before running samtools fastq https://www.biostars.org/p/454942/
     samtools sort -n -o {output.nonspike} unsorted_{output.nonspike}
     samtools sort -n -o tmp_sorted_spikes_{wildcards.sample}.bam tmp_unsorted_spikes_{wildcards.sample}.bam

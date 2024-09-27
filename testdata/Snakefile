@@ -71,9 +71,9 @@ refined_binstats_each = expand(
 )
 refined_stats = expand(
     f'metawrap/refined_binning_{{rep}}_depth{{depth}}_spike{{frac}}/metawrap_{config["metawrap_compl_thresh"]}_{config["metawrap_contam_thresh"]}_bins.stats',
-                       rep=reps,
-                   depth=total_depths,
-                   frac=total_spike_fractions,
+    rep=reps,
+    depth=total_depths,
+    frac=total_spike_fractions,
 )
 refined_stats_even = expand(
     f'metawrap/refined_binning_{{rep}}_evencoverage{{fcov}}/metawrap_{config["metawrap_compl_thresh"]}_{config["metawrap_contam_thresh"]}_bins.stats',
@@ -91,10 +91,14 @@ all_results = [
     spike_stats,
     evenspiked_reads,
     evenspike_stats,
-    evenassemblies,
-    assemblies,
     # "clean.done"
 ]
+if not config["skip_assembly"]:
+    all_results.extend([
+        evenassemblies,
+        assemblies,
+    ])
+
 # only bother attempting to refine the bins if we have at least 10m reads
 if min(total_depths) >= 10000000 and not config["skip_binning"]:
     all_results.extend([
@@ -130,20 +134,18 @@ rule get_references:
     mkdir -p {output.mockdir} {output.spikedir} tmp_spike
 
     curl -o - ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/013/045/GCA_000013045.1_ASM1304v1/GCA_000013045.1_ASM1304v1_genomic.fna.gz | gunzip > tmp_spike/Salinibacter_ruber.fa
-    # getting Trichoderma reesei  QM6a instead of  Trichoderma reesei ATCC 13631 .  Might be fine license-wise but not sure
     if [ "{params.exclude_t_reesei}" != "true" ]
     then
        curl -o - ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/167/675/GCF_000167675.1_v2.0/GCF_000167675.1_v2.0_genomic.fna.gz | gunzip  > tmp_spike/Trichoderma_reesei.fa
     else
        echo "excluding T reesei"
     fi
-    # getting CBA1121 instead of Haloarcula hispanica ATCC 33960  for the same reason.
-    curl -o - ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/008/729/095/GCF_008729095.1_ASM872909v1/GCF_008729095.1_ASM872909v1_genomic.fna.gz | gunzip  > tmp_spike/Haloarcula_hispanica.fa
+    curl -o - ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/223/905/GCF_000223905.1_ASM22390v1/GCF_000223905.1_ASM22390v1_genomic.fna.gz | gunzip  > tmp_spike/Haloarcula_hispanica.fa
 
     for fasta in $(ls tmp_spike/*fa)
     do
       # borrowed some logic from https://www.biostars.org/p/294920/ to smoosh together sequences
-      # otherwise, art with generate nreads PER Sequence, not per genome
+      # otherwise, art will generate nreads per Sequence, not per genome
       name=$(basename $fasta | sed "s|.fa||g")
       cat $fasta | grep -v "^>" |  awk  -v header=">${{name}}_concatenated" 'BEGIN {{ ORS=""; print header "\\n" }} {{ print }}' > {output.spikedir}/${{name}}.fasta
     done
@@ -170,7 +172,7 @@ rule make_input_table:
         import math
         mocks = glob.glob(input.mockdir + "/*.fasta")
         spikes= glob.glob(input.spikedir + "/*.fasta")
-        depth = int(wildcards.depth)
+        depth = int(wildcards.depth) / 2 # for paired data
         nmocks = len(mocks)
         nspikes = len(spikes)
         total_spike = depth * float(wildcards.frac)
@@ -244,8 +246,8 @@ rule simulate_even_coverage_datasets:
         echo "simulating fractional coverage for $refbase"
         art_illumina --seqSys HS25 --in $ref  --paired --len 150 --fcov {wildcards.fcov} --mflen 500 --sdev 10 --out {params.tmppre}_${{refbase}}_R --rndSeed {wildcards.rep}
       else
-        echo "simulating 1x coverage for $refbase"
-        art_illumina --seqSys HS25 --in $ref  --paired --len 150 --fcov 1 --mflen 500 --sdev 10 --out {params.tmppre}_${{refbase}}_R --rndSeed {wildcards.rep}
+        echo "simulating .5x coverage for $refbase"
+        art_illumina --seqSys HS25 --in $ref  --paired --len 150 --fcov .5 --mflen 500 --sdev 10 --out {params.tmppre}_${{refbase}}_R --rndSeed {wildcards.rep}
       fi
 
     done
