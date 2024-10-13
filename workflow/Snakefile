@@ -392,8 +392,20 @@ rule get_nonspike_reads:
     # get header, turn into a BED file
     samtools view -H  {input.bam} | grep "Salinibacter\|Trichoderma\|Haloarcula" | cut -f 2,3 | sed "s|SN:||g" | sed "s|LN:|1\t|g" | sort -k1,1 -k2,2n > {output.bed}
 
-    # inspired by https://www.biostars.org/p/473204/
-    samtools view -L {output.bed} -F 3852 -e "rname == rnext && ((rlen/length(seq)) >= {params.length_threshold}) && ([NM]/rlen <= {params.pctid_threshold})"  -U unsorted_{output.nonspike} -o tmp_unsorted_spikes_{wildcards.sample}.bam -@ {threads} {input.bam}
+    # inspired by https://www.biostars.org/p/473204/, but don't require pairing
+    samtools view -L {output.bed} -F 3844 -e "((rlen/length(seq)) >= {params.length_threshold}) && ([NM]/rlen <= {params.pctid_threshold})"  -U tmpunsorted_{output.nonspike} -o tmp_unsorted_any_spikes_{wildcards.sample}.bam -@ {threads} {input.bam}
+    # weve captured the paired and singleton spike reads, but sometimes we need to get the mates from the singletons out of the nonspike file;
+    # in low-biomass samples that generate low-quality librarires, we can end up with situations where R1 is clearly a spike but
+    # R2 has low quality, poly Gs, etc
+    # 1. get the singleread-mapping reads (-F no unmapped -f paired and mate unmapped)
+    samtools view -F 4 -f 9 tmp_unsorted_any_spikes_{wildcards.sample}.bam -@ {threads} | cut -f1 | sort | uniq > tmp_mapped_singleton_IDs_{wildcards.sample}
+    # 2. use those read ids to get unmapped pair of the mapped singletons
+    samtools view -b -N tmp_mapped_singleton_IDs_{wildcards.sample} -U unsorted_{output.nonspike} -o tmp_unsorted_singleton_spikes_{wildcards.sample}.bam tmpunsorted_{output.nonspike}
+
+    # merge the mapped pairs and half-mapped pairs
+    samtools merge -o tmp_unsorted_spikes_{wildcards.sample}.bam tmp_unsorted_any_spikes_{wildcards.sample}.bam tmp_unsorted_singleton_spikes_{wildcards.sample}.bam
+
+
     # make sure you NAME-sort before running samtools fastq https://www.biostars.org/p/454942/
     samtools sort -n -o {output.nonspike} unsorted_{output.nonspike}
     samtools sort -n -o tmp_sorted_spikes_{wildcards.sample}.bam tmp_unsorted_spikes_{wildcards.sample}.bam
