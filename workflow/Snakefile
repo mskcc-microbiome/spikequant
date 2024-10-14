@@ -56,7 +56,6 @@ localrules:
 
 
 
-
 rule all:
     input:
         f'{config["sample"]}.spike_reads.tsv',
@@ -64,6 +63,18 @@ rule all:
         f'{config["sample"]}_nospike_R2.fastq.gz',
         f'{config["sample"]}_ani_results.tsv',
         f'{config["sample"]}.stats',
+
+rule merge_flowcells:
+    input:
+        R1s=config["R1"],
+        R2s=config["R2"],
+    output:
+        temp("{sample}.R1.fq.gz"),
+        temp("{sample}.R2.fq.gz"),
+    shell:"""
+cat {input.R1s} > {output[0]}
+cat {input.R2s} > {output[1]}
+    """
 
 def get_spike_abs_paths(wildcards):
     return SPIKEDF.path.tolist()
@@ -232,7 +243,7 @@ if config["mapper"] == "bwa-mem":
 
     rule bwa_mem:
         input:
-            reads=[config["R1"], config["R2"]],
+            reads= ["{sample}.R1.fq.gz", "{sample}.R2.fq.gz"],
             # Index can be a list of (all) files created by bwa, or one of them
             dbbase="{sample}_reference.fa",
             idx=multiext("{sample}_reference.fa", ".amb", ".ann", ".sa", ".bwt"),
@@ -258,7 +269,7 @@ if config["mapper"] == "bwa-mem":
 elif config["mapper"] == "bowtie2":
     rule bowtie2:
         input:
-            reads=[config["R1"], config["R2"]],
+            reads= ["{sample}.R1.fq.gz", "{sample}.R2.fq.gz"],
             dbbase="{sample}_reference.fa",
         output:
             bam=temp(os.path.join('{sample}_bams/{sample}.bam')),
@@ -274,7 +285,7 @@ else:
     assert config["mapper"] == "minimap2-sr", f'{config["mapper"]} unsupported'
     rule minimap2sr:
         input:
-            reads=[config["R1"], config["R2"]],
+            reads= ["{sample}.R1.fq.gz", "{sample}.R2.fq.gz"],
             dbbase="{sample}_reference.fa",
         output:
             bam=temp(os.path.join('{sample}_bams/{sample}.bam')),
